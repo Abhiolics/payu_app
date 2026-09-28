@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,10 +9,12 @@ import {
   Platform,
   Modal,
   TouchableWithoutFeedback,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getDeposits } from '../services/depositService';
 import { StatusBar } from 'expo-status-bar';
 import {
   ArrowLeft,
@@ -33,10 +35,10 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { Colors } from '../constants/Colors';
 
-const DARK_BG = '#050505';
-const CARD_BG = '#111111';
-const TEXT_MUTED = '#8B93A5';
-const MINT = '#00D09C';
+const DARK_BG = '#F4F6FC';
+const CARD_BG = '#FFFFFF';
+const TEXT_MUTED = '#64748B';
+const MINT = '#7C3AED';
 
 type DateFilter = 'All' | '7 Days' | '30 Days' | '90 Days';
 type StatusFilter = 'All' | 'Processing' | 'Submit' | 'Success' | 'Close';
@@ -54,152 +56,6 @@ export type BuyOrder = {
   merchant: string;
   referenceId: string;
 };
-
-const SAMPLE_ORDERS: BuyOrder[] = [
-  {
-    id: 'ord-1',
-    orderNumber: 'BO-20260908-7821',
-    amount: '₹ 5,000.00',
-    cryptoAmount: '55.49 USDT',
-    unitPrice: '₹90.10',
-    status: 'processing',
-    paymentMethod: 'Mobikwik UPI',
-    dateStr: '2026-09-08 16:30:12',
-    daysAgo: 0,
-    merchant: 'FastPay Merchant #41',
-    referenceId: 'REF9823104921',
-  },
-  {
-    id: 'ord-2',
-    orderNumber: 'BO-20260907-6540',
-    amount: '₹ 12,000.00',
-    cryptoAmount: '133.18 USDT',
-    unitPrice: '₹90.10',
-    status: 'submit',
-    paymentMethod: 'IMPS Bank Transfer',
-    dateStr: '2026-09-07 11:20:45',
-    daysAgo: 1,
-    merchant: 'Prime Traders Global',
-    referenceId: 'REF9814092104',
-  },
-  {
-    id: 'ord-3',
-    orderNumber: 'BO-20260905-5912',
-    amount: '₹ 2,000.00',
-    cryptoAmount: '22.20 USDT',
-    unitPrice: '₹90.10',
-    status: 'success',
-    paymentMethod: 'UPI - GooglePay',
-    dateStr: '2026-09-05 09:15:30',
-    daysAgo: 3,
-    merchant: 'Alpha Crypto Ex',
-    referenceId: 'REF9782190345',
-  },
-  {
-    id: 'ord-4',
-    orderNumber: 'BO-20260902-5301',
-    amount: '₹ 700.00',
-    cryptoAmount: '7.77 USDT',
-    unitPrice: '₹90.10',
-    status: 'close',
-    paymentMethod: 'Mobikwik Wallet',
-    dateStr: '2026-09-02 21:04:18',
-    daysAgo: 6,
-    merchant: 'SwiftP2P Desk',
-    referenceId: 'REF9754120938',
-  },
-  {
-    id: 'ord-5',
-    orderNumber: 'BO-20260826-4890',
-    amount: '₹ 25,000.00',
-    cryptoAmount: '277.47 USDT',
-    unitPrice: '₹90.10',
-    status: 'success',
-    paymentMethod: 'IMPS Bank Transfer',
-    dateStr: '2026-08-26 14:10:00',
-    daysAgo: 13,
-    merchant: 'Apex Trading Corp',
-    referenceId: 'REF9698231045',
-  },
-  {
-    id: 'ord-6',
-    orderNumber: 'BO-20260820-4123',
-    amount: '₹ 3,600.00',
-    cryptoAmount: '39.95 USDT',
-    unitPrice: '₹90.10',
-    status: 'submit',
-    paymentMethod: 'UPI - PhonePe',
-    dateStr: '2026-08-20 18:45:10',
-    daysAgo: 19,
-    merchant: 'FastPay Merchant #12',
-    referenceId: 'REF9643190281',
-  },
-  {
-    id: 'ord-7',
-    orderNumber: 'BO-20260814-3874',
-    amount: '₹ 1,500.00',
-    cryptoAmount: '16.65 USDT',
-    unitPrice: '₹90.10',
-    status: 'close',
-    paymentMethod: 'UPI - Paytm',
-    dateStr: '2026-08-14 12:30:00',
-    daysAgo: 25,
-    merchant: 'Star Exchange',
-    referenceId: 'REF9587219034',
-  },
-  {
-    id: 'ord-8',
-    orderNumber: 'BO-20260810-3409',
-    amount: '₹ 10,000.00',
-    cryptoAmount: '111.00 USDT',
-    unitPrice: '₹90.10',
-    status: 'processing',
-    paymentMethod: 'IMPS Bank Transfer',
-    dateStr: '2026-08-10 10:00:22',
-    daysAgo: 29,
-    merchant: 'Alpha Crypto Ex',
-    referenceId: 'REF9543190283',
-  },
-  {
-    id: 'ord-9',
-    orderNumber: 'BO-20260725-2980',
-    amount: '₹ 50,000.00',
-    cryptoAmount: '555.00 USDT',
-    unitPrice: '₹90.10',
-    status: 'success',
-    paymentMethod: 'Bank Transfer (RTGS)',
-    dateStr: '2026-07-25 15:40:12',
-    daysAgo: 45,
-    merchant: 'Prime Traders Global',
-    referenceId: 'REF9423189021',
-  },
-  {
-    id: 'ord-10',
-    orderNumber: 'BO-20260705-2100',
-    amount: '₹ 8,000.00',
-    cryptoAmount: '88.80 USDT',
-    unitPrice: '₹90.10',
-    status: 'close',
-    paymentMethod: 'Mobikwik UPI',
-    dateStr: '2026-07-05 13:20:18',
-    daysAgo: 65,
-    merchant: 'SwiftP2P Desk',
-    referenceId: 'REF9312094812',
-  },
-  {
-    id: 'ord-11',
-    orderNumber: 'BO-20260620-1845',
-    amount: '₹ 15,000.00',
-    cryptoAmount: '166.50 USDT',
-    unitPrice: '₹90.10',
-    status: 'success',
-    paymentMethod: 'IMPS Bank Transfer',
-    dateStr: '2026-06-20 17:15:30',
-    daysAgo: 80,
-    merchant: 'Apex Trading Corp',
-    referenceId: 'REF9201948210',
-  },
-];
 
 const DATE_OPTIONS: { id: DateFilter; label: string; subtitle: string }[] = [
   { id: 'All', label: 'All Dates', subtitle: 'Show orders from any date' },
@@ -220,11 +76,53 @@ export default function BuyOrdersScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? 36 : 20) + 10;
+  const [orders, setOrders] = useState<BuyOrder[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState<DateFilter>('All');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
   const [activeDropdown, setActiveDropdown] = useState<'date' | 'status' | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchOrders = async () => {
+      try {
+        const deposits = await getDeposits();
+        if (Array.isArray(deposits) && deposits.length > 0) {
+          const mapped: BuyOrder[] = deposits.map((d) => {
+            const createdAt = d.createdAt ? new Date(d.createdAt) : new Date();
+            const daysAgo = Math.floor((Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24));
+            const status: BuyOrder['status'] =
+              d.status === 'approved' ? 'success' : d.status === 'rejected' ? 'close' : 'processing';
+            const usdt = (d.amount / 90.1).toFixed(2);
+
+            return {
+              id: d._id,
+              orderNumber: d.transactionRef || `BO-${d._id.slice(-8).toUpperCase()}`,
+              amount: `₹ ${d.amount.toFixed(2)}`,
+              cryptoAmount: `${usdt} USDT`,
+              unitPrice: '₹90.10',
+              status,
+              paymentMethod: d.plan?.name ? `${d.plan.name} Plan` : 'Direct Deposit',
+              dateStr: createdAt.toISOString().replace('T', ' ').slice(0, 19),
+              daysAgo: Math.max(0, daysAgo),
+              merchant: 'Official PayU Desk',
+              referenceId: d.transactionRef || d._id,
+            };
+          });
+          setOrders(mapped);
+        } else {
+          setOrders([]);
+        }
+      } catch {
+        setOrders([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchOrders();
+  }, []);
 
   const handleCopy = async (orderNumber: string) => {
     try {
@@ -240,7 +138,7 @@ export default function BuyOrdersScreen() {
     }, 2000);
   };
 
-  const filteredOrders = SAMPLE_ORDERS.filter((order) => {
+  const filteredOrders = orders.filter((order) => {
     // 1. Date filter
     if (dateFilter === '7 Days' && order.daysAgo > 7) return false;
     if (dateFilter === '30 Days' && order.daysAgo > 30) return false;
@@ -260,8 +158,8 @@ export default function BuyOrdersScreen() {
         return {
           label: 'Processing',
           color: MINT,
-          bg: 'rgba(0, 208, 156, 0.12)',
-          border: 'rgba(0, 208, 156, 0.3)',
+          bg: 'rgba(124, 58, 237, 0.12)',
+          border: 'rgba(124, 58, 237, 0.3)',
           icon: <Clock size={12} color={MINT} strokeWidth={2.5} />,
         };
       case 'submit':
@@ -275,10 +173,10 @@ export default function BuyOrdersScreen() {
       case 'success':
         return {
           label: 'Success',
-          color: '#10B981',
-          bg: 'rgba(16, 185, 129, 0.12)',
-          border: 'rgba(16, 185, 129, 0.3)',
-          icon: <CheckCircle2 size={12} color="#10B981" strokeWidth={2.5} />,
+          color: '#7C3AED',
+          bg: 'rgba(124, 58, 237, 0.12)',
+          border: 'rgba(124, 58, 237, 0.3)',
+          icon: <CheckCircle2 size={12} color="#7C3AED" strokeWidth={2.5} />,
         };
       case 'close':
       default:
@@ -300,18 +198,27 @@ export default function BuyOrdersScreen() {
 
   const isFiltered = dateFilter !== 'All' || statusFilter !== 'All';
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
   return (
     <View style={styles.safeArea}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       {/* Header with Back Arrow */}
       <View style={[styles.header, { paddingTop: topPadding }]}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           style={styles.backButton}
           activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           accessibilityLabel="Go back"
         >
-          <ArrowLeft size={22} color="#FFFFFF" />
+          <ArrowLeft size={20} color="#0F172A" />
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>Buy Orders</Text>
@@ -454,27 +361,37 @@ export default function BuyOrdersScreen() {
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       >
-        {filteredOrders.length === 0 ? (
+        {isLoading ? (
+          <View style={{ paddingVertical: 50, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={MINT} />
+          </View>
+        ) : filteredOrders.length === 0 ? (
           <View style={styles.emptyContainer}>
             <View style={styles.emptyIconCircle}>
               <Filter size={32} color={MINT} strokeWidth={1.5} />
             </View>
-            <Text style={styles.emptyTitle}>No Orders Found</Text>
+            <Text style={styles.emptyTitle}>
+              {orders.length === 0 ? 'No Buy Orders' : 'No Orders Found'}
+            </Text>
             <Text style={styles.emptySubtitle}>
-              No buy orders match your current filter settings for {dateFilter} and {statusFilter} status.
+              {orders.length === 0
+                ? 'You do not have any orders yet. Deposit or buy packages to see your live order history here.'
+                : `No buy orders match your current filter settings for ${dateFilter} and ${statusFilter} status.`}
             </Text>
             <TouchableOpacity
               style={styles.emptyButton}
-              onPress={resetFilters}
+              onPress={orders.length === 0 ? () => router.push('/deposit') : resetFilters}
               activeOpacity={0.8}
             >
               <LinearGradient
-                colors={['#00E5AE', '#00D09C', '#00A67D']}
+                colors={['#8B5CF6', '#7C3AED', '#6D28D9']}
                 style={styles.emptyButtonGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               >
-                <Text style={styles.emptyButtonText}>Reset Filters</Text>
+                <Text style={styles.emptyButtonText}>
+                  {orders.length === 0 ? 'Make a Deposit' : 'Reset Filters'}
+                </Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -759,22 +676,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: '#EDF2F7',
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: CARD_BG,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: '#E2E8F0',
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#0F172A',
     letterSpacing: 0.3,
   },
   headerRightPlaceholder: {
@@ -786,13 +703,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 14,
-    backgroundColor: 'rgba(0, 208, 156, 0.1)',
+    backgroundColor: '#EDE9FE',
     borderWidth: 0.5,
-    borderColor: 'rgba(0, 208, 156, 0.3)',
+    borderColor: '#DDD6FE',
     gap: 4,
   },
   resetButtonText: {
-    color: MINT,
+    color: '#7C3AED',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -809,19 +726,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: CARD_BG,
+    backgroundColor: '#FFFFFF',
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   dropdownButtonActive: {
-    borderColor: 'rgba(226, 173, 81, 0.4)',
-    backgroundColor: '#191821',
+    borderColor: '#7C3AED',
+    backgroundColor: '#FAF5FF',
   },
   dropdownButtonOpen: {
-    borderColor: MINT,
+    borderColor: '#7C3AED',
   },
   dropdownLeft: {
     flexDirection: 'row',
@@ -834,19 +756,19 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   dropdownIconCircleActive: {
-    backgroundColor: 'rgba(226, 173, 81, 0.15)',
+    backgroundColor: '#EDE9FE',
   },
   dropdownTextCol: {
     flex: 1,
   },
   dropdownLabel: {
     fontSize: 10,
-    color: TEXT_MUTED,
+    color: '#64748B',
     fontWeight: '500',
     marginBottom: 2,
     textTransform: 'uppercase',
@@ -854,11 +776,11 @@ const styles = StyleSheet.create({
   },
   dropdownValue: {
     fontSize: 13,
-    color: '#E5E7EB',
+    color: '#0F172A',
     fontWeight: '600',
   },
   dropdownValueSelected: {
-    color: MINT,
+    color: '#7C3AED',
     fontWeight: '700',
   },
   activePillsRow: {
@@ -871,16 +793,16 @@ const styles = StyleSheet.create({
   activePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(226, 173, 81, 0.12)',
+    backgroundColor: '#EDE9FE',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 0.5,
-    borderColor: 'rgba(226, 173, 81, 0.3)',
+    borderColor: '#DDD6FE',
     gap: 6,
   },
   activePillText: {
-    color: MINT,
+    color: '#7C3AED',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -889,7 +811,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   clearAllText: {
-    color: TEXT_MUTED,
+    color: '#64748B',
     fontSize: 12,
     textDecorationLine: 'underline',
   },
@@ -900,19 +822,24 @@ const styles = StyleSheet.create({
   },
   resultsCountText: {
     fontSize: 12,
-    color: TEXT_MUTED,
+    color: '#64748B',
   },
   listContent: {
     paddingHorizontal: 20,
     paddingBottom: 40,
   },
   orderCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: '#EDF2F7',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   orderTopRow: {
     flexDirection: 'row',
@@ -926,8 +853,8 @@ const styles = StyleSheet.create({
   },
   orderNumber: {
     fontSize: 13,
-    fontWeight: '600',
-    color: '#D1D5DB',
+    fontWeight: '700',
+    color: '#0F172A',
   },
   copyIconWrapper: {
     marginLeft: 6,
@@ -935,15 +862,15 @@ const styles = StyleSheet.create({
   },
   copiedBadge: {
     marginLeft: 6,
-    backgroundColor: 'rgba(226, 173, 81, 0.2)',
+    backgroundColor: '#EDE9FE',
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 6,
     borderWidth: 0.5,
-    borderColor: MINT,
+    borderColor: '#DDD6FE',
   },
   copiedBadgeText: {
-    color: MINT,
+    color: '#7C3AED',
     fontSize: 9,
     fontWeight: '700',
   },
@@ -969,22 +896,22 @@ const styles = StyleSheet.create({
   },
   amountLabel: {
     fontSize: 11,
-    color: TEXT_MUTED,
+    color: '#64748B',
     marginBottom: 3,
   },
   amountValue: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: '800',
+    color: '#0F172A',
   },
   cryptoValue: {
     fontSize: 15,
     fontWeight: '700',
-    color: MINT,
+    color: '#7C3AED',
   },
   cardDivider: {
     height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: '#F1F5F9',
     marginBottom: 10,
   },
   metaRow: {
@@ -999,17 +926,17 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 12,
-    color: TEXT_MUTED,
+    color: '#64748B',
   },
   dateText: {
     fontSize: 11,
-    color: TEXT_MUTED,
+    color: '#64748B',
   },
   expandedDetails: {
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.05)',
+    borderTopColor: '#F1F5F9',
     gap: 8,
   },
   detailRow: {
@@ -1019,12 +946,12 @@ const styles = StyleSheet.create({
   },
   detailLabel: {
     fontSize: 12,
-    color: TEXT_MUTED,
+    color: '#64748B',
   },
   detailValue: {
     fontSize: 12,
-    color: '#E5E7EB',
-    fontWeight: '500',
+    color: '#0F172A',
+    fontWeight: '600',
   },
   expandButton: {
     flexDirection: 'row',
@@ -1033,12 +960,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.03)',
+    borderTopColor: '#F1F5F9',
     gap: 4,
   },
   expandButtonText: {
     fontSize: 12,
-    color: MINT,
+    color: '#7C3AED',
     fontWeight: '600',
   },
   emptyContainer: {
@@ -1051,9 +978,9 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: 'rgba(226, 173, 81, 0.08)',
+    backgroundColor: '#F1F5F9',
     borderWidth: 1,
-    borderColor: 'rgba(226, 173, 81, 0.25)',
+    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -1061,12 +988,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#0F172A',
     marginBottom: 6,
   },
   emptySubtitle: {
     fontSize: 13,
-    color: TEXT_MUTED,
+    color: '#64748B',
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 20,
@@ -1082,30 +1009,35 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   emptyButtonText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: '#15141A',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(226, 173, 81, 0.25)',
+    borderColor: '#E2E8F0',
     paddingTop: 12,
     paddingBottom: Platform.OS === 'ios' ? 40 : 24,
     paddingHorizontal: 20,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    elevation: 10,
   },
   sheetHandle: {
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#CBD5E1',
     alignSelf: 'center',
     marginBottom: 16,
   },
@@ -1116,18 +1048,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+    borderBottomColor: '#F1F5F9',
   },
   modalTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#0F172A',
   },
   closeButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1141,30 +1073,31 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
     borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderColor: '#E2E8F0',
   },
   optionItemSelected: {
-    backgroundColor: 'rgba(226, 173, 81, 0.12)',
-    borderColor: 'rgba(226, 173, 81, 0.4)',
+    backgroundColor: '#EDE9FE',
+    borderColor: '#C4B5FD',
   },
   optionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     flex: 1,
+    marginRight: 4,
   },
   optionIconCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   optionIconCircleSelected: {
-    backgroundColor: 'rgba(226, 173, 81, 0.2)',
+    backgroundColor: '#DDD6FE',
   },
   optionTextCol: {
     flex: 1,
@@ -1172,15 +1105,15 @@ const styles = StyleSheet.create({
   optionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#D1D5DB',
+    color: '#334155',
   },
   optionTitleSelected: {
-    color: '#FFFFFF',
+    color: '#0F172A',
     fontWeight: '700',
   },
   optionSubtitle: {
     fontSize: 11,
-    color: TEXT_MUTED,
+    color: '#64748B',
     marginTop: 2,
   },
 });

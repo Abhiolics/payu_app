@@ -1,295 +1,940 @@
-import React, { useState } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TouchableOpacity, 
-  ScrollView, 
-  TextInput,
-  Image,
-  Platform,
-  Modal,
-  KeyboardAvoidingView
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { 
-  ArrowLeft, 
-  Copy, 
-  Check, 
-  Upload,
-  CheckCircle2,
-  ShieldCheck,
-  AlertCircle,
-  Image as ImageIcon,
-  Wallet
-} from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Clipboard from 'expo-clipboard';
-
-const DARK_BG = '#050505';
-const CARD_BG = '#111111';
-const TEXT_MUTED = '#8B93A5';
-const MINT = '#00D09C';
-const MINT_GRADIENT = ['#00E5AE', '#00D09C', '#00A67D'] as const;
+import * as ImagePicker from 'expo-image-picker';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import {
+  ArrowLeft,
+  Camera,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Copy,
+  Edit2,
+  ExternalLink,
+  Image as ImageIcon,
+  QrCode,
+  RefreshCw,
+  ShieldCheck,
+  Smartphone,
+  Sparkles,
+  Upload,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  CredIcon,
+  GooglePayIcon,
+  PaytmIcon,
+  PhonePeIcon,
+} from '../components/UpiAppIcons';
+import { useAuth } from '../context/AuthContext';
+import {
+  DepositItem,
+  detectInstalledUpiApps,
+  getDeposits,
+  getFullImageUrl,
+  getPaymentMethods,
+  getPlans,
+  launchUpiPayment,
+  MembershipPlan,
+  PaymentMethods,
+  submitDeposit,
+  SupportedUpiApp,
+} from '../services';
 
 export default function DepositScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? 36 : 20) + 10;
+  const { planId: initialPlanId, planAmount: initialPlanAmount } = useLocalSearchParams<{
+    planId?: string;
+    planAmount?: string;
+  }>();
 
-  const [copied, setCopied] = useState(false);
+  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? 36 : 20) + 8;
+  const bottomPadding = Math.max(insets.bottom, 16);
+  const { refreshUserData } = useAuth();
+
+  const [activeTab, setActiveTab] = useState<'deposit' | 'history'>('deposit');
+
+  // API data
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethods | null>(null);
+  const [plans, setPlans] = useState<MembershipPlan[]>([]);
+  const [depositHistory, setDepositHistory] = useState<DepositItem[]>([]);
+  const [isLoadingMethods, setIsLoadingMethods] = useState(true);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Form State
+  const [amount, setAmount] = useState(initialPlanAmount || '500');
+  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>(initialPlanId);
   const [utr, setUtr] = useState('');
-  const [hasScreenshot, setHasScreenshot] = useState(false);
+  const [screenshotUri, setScreenshotUri] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [showEditAmountModal, setShowEditAmountModal] = useState(false);
+  const [tempAmount, setTempAmount] = useState(amount);
+  const [showPickerSheet, setShowPickerSheet] = useState(false);
+  const [copiedFeedback, setCopiedFeedback] = useState(false);
 
-  const handleCopyId = async () => {
-    try {
-      await Clipboard.setStringAsync('chetan202004@fam');
-    } catch {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        navigator.clipboard.writeText('chetan202004@fam');
+  // QR Blur State (matches Image 1)
+  const [isQrBlurred, setIsQrBlurred] = useState(true);
+
+  // Downloaded UPI Apps State (matches Image 2)
+  const [installedApps, setInstalledApps] = useState<SupportedUpiApp[]>([]);
+  const [isDetectingApps, setIsDetectingApps] = useState(true);
+  const [launchingAppId, setLaunchingAppId] = useState<string | null>(null);
+
+  // Check which UPI apps are downloaded on device
+  useEffect(() => {
+    let isMounted = true;
+    const checkApps = async () => {
+      setIsDetectingApps(true);
+      try {
+        const apps = await detectInstalledUpiApps();
+        if (isMounted) {
+          setInstalledApps(apps);
+        }
+      } catch (err) {
+        console.warn('Failed detecting installed UPI apps:', err);
+      } finally {
+        if (isMounted) {
+          setIsDetectingApps(false);
+        }
       }
+    };
+
+    checkApps();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Load payment methods and plans
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        setIsLoadingMethods(true);
+        const [methods, plansList] = await Promise.all([
+          getPaymentMethods().catch(() => null),
+          getPlans().catch(() => []),
+        ]);
+        if (methods) setPaymentMethods(methods);
+        setPlans(plansList);
+
+        // If planAmount wasn't passed, check if plans exist and set default
+        if (!initialPlanAmount && plansList && plansList.length > 0) {
+          setAmount(String(plansList[0].amount));
+          setSelectedPlanId(plansList[0]._id);
+          setTempAmount(String(plansList[0].amount));
+        }
+      } catch (err) {
+        console.warn('Failed loading deposit options:', err);
+      } finally {
+        setIsLoadingMethods(false);
+      }
+    };
+
+    loadInitialData();
+  }, [initialPlanAmount]);
+
+  // Load history when tab is clicked
+  const loadHistory = async () => {
+    try {
+      setIsLoadingHistory(true);
+      const history = await getDeposits();
+      setDepositHistory(history);
+    } catch (err) {
+      console.warn('Failed loading deposits history:', err);
+    } finally {
+      setIsLoadingHistory(false);
     }
-    setCopied(true);
-    setTimeout(() => {
-      setCopied(false);
-    }, 2000);
   };
 
-  const handleUploadScreenshot = () => {
-    // In a real app we'd use expo-image-picker here
-    setHasScreenshot(true);
+  useEffect(() => {
+    if (activeTab === 'history') {
+      loadHistory();
+    }
+  }, [activeTab]);
+
+  const bank = paymentMethods?.bankAccount;
+  const qr = paymentMethods?.qrCode;
+  const upiId = qr?.upiId || bank?.upiId || 'pal3424@fam';
+  const customQrImage = qr?.imageUrl ? getFullImageUrl(qr.imageUrl) : '';
+
+  // Generate dynamic QR code URL based on current amount and UPI ID
+  const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(
+    `upi://pay?pa=${upiId}&pn=PayU&am=${amount || '1000'}&cu=INR`
+  )}`;
+  const displayQrUrl = customQrImage || dynamicQrUrl;
+
+  const handleLaunchUpiApp = async (app?: SupportedUpiApp) => {
+    setLaunchingAppId(app ? app.id : 'generic');
+    try {
+      await launchUpiPayment({
+        app,
+        upiId,
+        amount: amount || '1000',
+        name: 'PayU Deposit',
+      });
+    } finally {
+      setTimeout(() => {
+        setLaunchingAppId(null);
+      }, 1500);
+    }
   };
 
-  // Validation: Both UTR and Screenshot are required
-  const isFormValid = utr.trim().length > 5 && hasScreenshot;
-
-  const handleSubmit = () => {
-    if (!isFormValid) return;
-    setShowSuccessModal(true);
+  const handleCopyUpi = async () => {
+    await Clipboard.setStringAsync(upiId);
+    setCopiedFeedback(true);
+    setTimeout(() => setCopiedFeedback(false), 2000);
   };
 
-  const handleCloseModal = () => {
+  const handlePickFromGallery = async () => {
+    setShowPickerSheet(false);
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission Required',
+        'Please grant access to your photo library to attach your payment receipt screenshot.'
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets[0]?.uri) {
+      setScreenshotUri(result.assets[0].uri);
+      setSubmitError(null);
+    }
+  };
+
+  const handleTakePhoto = async () => {
+    setShowPickerSheet(false);
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission Required', 'Camera permission is needed to take a photo of the receipt.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets[0]?.uri) {
+      setScreenshotUri(result.assets[0].uri);
+      setSubmitError(null);
+    }
+  };
+
+  const handleSaveAmount = () => {
+    const clean = tempAmount.replace(/[^0-9]/g, '');
+    if (clean && Number(clean) > 0) {
+      setAmount(clean);
+    }
+    setShowEditAmountModal(false);
+  };
+
+  const handleSelectPlan = (plan: MembershipPlan) => {
+    setSelectedPlanId(plan._id);
+    setAmount(String(plan.amount));
+    setTempAmount(String(plan.amount));
+    setShowEditAmountModal(false);
+  };
+
+  const isFormValid =
+    Boolean(amount) && Number(amount) > 0 && utr.trim().length >= 6 && Boolean(screenshotUri);
+
+  const handleSubmit = async () => {
+    if (!utr.trim()) {
+      setSubmitError('Please enter the 12-digit UTR / Reference number from your payment receipt.');
+      return;
+    }
+    if (utr.trim().length < 6) {
+      setSubmitError('Please enter a valid 12-digit UTR number.');
+      return;
+    }
+    if (!screenshotUri) {
+      setSubmitError('Please attach a screenshot of your payment receipt.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      await submitDeposit(Number(amount), utr.trim(), screenshotUri, selectedPlanId);
+      setIsSubmitting(false);
+      setShowSuccessModal(true);
+      await refreshUserData();
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setSubmitError(err.message || 'Deposit submission failed. Please try again.');
+    }
+  };
+
+  const handleSuccessClose = () => {
     setShowSuccessModal(false);
-    router.replace('/(tabs)/wallet');
+    setUtr('');
+    setScreenshotUri(null);
+    setActiveTab('history');
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.safeArea} 
+    <KeyboardAvoidingView
+      style={styles.safeArea}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <StatusBar style="light" />
-      
-      {/* Header */}
+      <StatusBar style="dark" />
+
+      {/* Top Header */}
       <View style={[styles.header, { paddingTop: topPadding }]}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => router.back()}
+        <TouchableOpacity
+          style={styles.circleButton}
+          onPress={() => {
+            if (activeTab === 'history') {
+              setActiveTab('deposit');
+            } else {
+              router.back();
+            }
+          }}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={22} color="#FFFFFF" />
+          <ArrowLeft size={20} color="#0F172A" strokeWidth={2.4} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Deposit Funds</Text>
-        <View style={styles.headerRightPlaceholder} />
+
+        <Text style={styles.headerTitle}>Deposit</Text>
+
+        <TouchableOpacity
+          style={[styles.circleButton, activeTab === 'history' && styles.circleButtonActive]}
+          onPress={() => setActiveTab(activeTab === 'deposit' ? 'history' : 'deposit')}
+          activeOpacity={0.7}
+        >
+          <Clock size={19} color={activeTab === 'history' ? '#FFFFFF' : '#7C3AED'} strokeWidth={2.2} />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        
-        {/* Step 1: Payment Details Card */}
-        <View style={styles.stepHeaderRow}>
-          <View style={styles.stepBadge}>
-            <Text style={styles.stepBadgeText}>1</Text>
+      {activeTab === 'deposit' ? (
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomPadding + 88 }]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* SECTION 1: UPI PAYMENT */}
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionIconBadge}>
+              <QrCode size={18} color="#7C3AED" strokeWidth={2.4} />
+            </View>
+            <Text style={styles.sectionTitle}>UPI Payment</Text>
           </View>
-          <Text style={styles.stepTitle}>Scan & Pay</Text>
-        </View>
 
-        <View style={styles.paymentCard}>
-          <LinearGradient
-            colors={['rgba(0, 208, 156, 0.1)', 'rgba(0, 208, 156, 0.02)']}
-            style={styles.paymentCardGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
-          >
-            <View style={styles.amountContainer}>
-              <Text style={styles.amountLabel}>Amount to pay</Text>
-              <Text style={styles.amountValue}>₹2,740<Text style={styles.amountDecimal}>.00</Text></Text>
-            </View>
-
-            <View style={styles.qrContainer}>
-              <View style={styles.qrWrapper}>
-                <Image 
-                  source={{ uri: 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa=chetan202004@fam&pn=Chetan&cu=INR' }} 
-                  style={styles.qrImage}
-                  resizeMode="contain"
-                />
+          {/* QR Code Container */}
+          <View style={styles.qrCard}>
+            {isLoadingMethods ? (
+              <View style={styles.qrLoaderBox}>
+                <ActivityIndicator size="large" color="#7C3AED" />
+                <Text style={styles.qrLoaderText}>Generating secure UPI QR code...</Text>
               </View>
-              <Text style={styles.scanText}>Use any UPI app to scan and pay</Text>
-            </View>
+            ) : (
+              <View style={styles.qrFrameWrapper}>
+                {/* Purple glowing corner brackets matching Image 1 */}
+                <View style={styles.cornerBracketTL} />
+                <View style={styles.cornerBracketBR} />
 
-            <View style={styles.divider} />
+                <View style={styles.qrInnerContainer}>
+                  <Image
+                    source={{ uri: displayQrUrl }}
+                    style={styles.qrImage}
+                    blurRadius={isQrBlurred ? (Platform.OS === 'ios' ? 24 : 16) : 0}
+                    resizeMode="contain"
+                  />
 
-            <View style={styles.upiRow}>
-              <View style={styles.upiDetails}>
-                <Text style={styles.upiLabel}>UPI ID</Text>
-                <Text style={styles.upiValue}>chetan202004@fam</Text>
+                  {/* Centered Zoom button when blurred (matches Image 1) */}
+                  {isQrBlurred && (
+                    <TouchableOpacity
+                      style={styles.qrCenterZoomBtn}
+                      onPress={() => setIsQrBlurred(false)}
+                      activeOpacity={0.82}
+                    >
+                      <ZoomIn size={32} color="#0F172A" strokeWidth={2.4} />
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Hide QR Pill when unblurred */}
+                  {!isQrBlurred && (
+                    <TouchableOpacity
+                      style={styles.hideQrPill}
+                      onPress={() => setIsQrBlurred(true)}
+                      activeOpacity={0.78}
+                    >
+                      <ZoomOut size={13} color="#7C3AED" strokeWidth={2.2} />
+                      <Text style={styles.hideQrPillText}>Hide QR</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
-              <TouchableOpacity 
-                style={[styles.copyButton, copied && styles.copyButtonSuccess]} 
-                onPress={handleCopyId}
-                activeOpacity={0.7}
+            )}
+          </View>
+
+          {/* CTA: View QR (when blurred) or scan instruction */}
+          {isQrBlurred ? (
+            <View style={styles.viewQrCtaContainer}>
+              <TouchableOpacity
+                style={styles.viewQrCtaBtn}
+                onPress={() => setIsQrBlurred(false)}
+                activeOpacity={0.85}
               >
-                {copied ? (
-                  <Check size={16} color={MINT} />
-                ) : (
-                  <Copy size={16} color="#FFFFFF" />
-                )}
-                <Text style={[styles.copyButtonText, copied && { color: MINT }]}>
-                  {copied ? 'Copied!' : 'Copy'}
-                </Text>
+                <LinearGradient
+                  colors={['#8B5CF6', '#7C3AED', '#6D28D9']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.viewQrGradient}
+                >
+                  <ZoomIn size={16} color="#FFFFFF" strokeWidth={2.5} />
+                  <Text style={styles.viewQrCtaText}>View QR Code</Text>
+                </LinearGradient>
               </TouchableOpacity>
+              <Text style={styles.scanSubtitle}>Tap above or center icon to unblur</Text>
             </View>
-          </LinearGradient>
-        </View>
+          ) : (
+            <Text style={styles.scanSubtitle}>Scan with any UPI app to pay</Text>
+          )}
 
-        {/* Step 2: Verification */}
-        <View style={styles.stepHeaderRow}>
-          <View style={styles.stepBadge}>
-            <Text style={styles.stepBadgeText}>2</Text>
-          </View>
-          <Text style={styles.stepTitle}>Submit Verification</Text>
-        </View>
-
-        <View style={styles.verificationContainer}>
-          
-          {/* Information Banner */}
-          <View style={styles.infoBanner}>
-            <AlertCircle size={16} color={MINT} />
-            <Text style={styles.infoBannerText}>
-              Ensure you input the exact 12-digit UTR and a clear screenshot to prevent delays.
-            </Text>
-          </View>
-
-          {/* UTR Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>12-Digit UTR Number <Text style={styles.requiredAsterisk}>*</Text></Text>
-            <View style={[styles.inputContainer, utr.length > 5 && styles.inputContainerActive]}>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g. 324510XXXXXX"
-                placeholderTextColor="#555560"
-                value={utr}
-                onChangeText={setUtr}
-                keyboardType="number-pad"
-                maxLength={12}
-              />
-              {utr.length > 5 && (
-                <View style={styles.inputCheck}>
-                  <Check size={16} color={MINT} />
-                </View>
-              )}
-            </View>
-          </View>
-
-          {/* Screenshot Upload */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Payment Screenshot <Text style={styles.requiredAsterisk}>*</Text></Text>
-            <TouchableOpacity 
-              style={[styles.uploadBox, hasScreenshot && styles.uploadBoxSuccess]}
-              onPress={handleUploadScreenshot}
-              activeOpacity={0.8}
+          {/* UPI ID Row */}
+          <View style={styles.upiRow}>
+            <Text style={styles.upiLabel}>UPI ID: </Text>
+            <Text style={styles.upiValue}>{upiId}</Text>
+            <TouchableOpacity
+              onPress={handleCopyUpi}
+              style={styles.copyBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              {hasScreenshot ? (
-                <View style={styles.uploadContent}>
-                  <View style={styles.uploadIconCircleSuccess}>
-                    <ImageIcon size={20} color={MINT} />
-                  </View>
-                  <View style={styles.uploadTexts}>
-                    <Text style={styles.uploadTitleSuccess}>Screenshot.jpg</Text>
-                    <Text style={styles.uploadSubtitleSuccess}>Successfully attached</Text>
-                  </View>
-                  <TouchableOpacity 
-                    style={styles.removeUploadBtn} 
-                    onPress={() => setHasScreenshot(false)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Text style={styles.removeUploadText}>Remove</Text>
-                  </TouchableOpacity>
-                </View>
+              {copiedFeedback ? (
+                <Check size={16} color="#10B981" strokeWidth={2.5} />
               ) : (
-                <View style={styles.uploadContent}>
-                  <View style={styles.uploadIconCircle}>
-                    <Upload size={20} color={TEXT_MUTED} />
-                  </View>
-                  <View style={styles.uploadTexts}>
-                    <Text style={styles.uploadTitle}>Upload Screenshot</Text>
-                    <Text style={styles.uploadSubtitle}>JPG, PNG up to 5MB</Text>
-                  </View>
-                </View>
+                <Copy size={16} color="#7C3AED" strokeWidth={2} />
               )}
+            </TouchableOpacity>
+            {copiedFeedback && (
+              <View style={styles.copiedTag}>
+                <Text style={styles.copiedTagText}>Copied</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Amount Row */}
+          <TouchableOpacity
+            style={styles.amountRow}
+            onPress={() => {
+              setTempAmount(amount);
+              setShowEditAmountModal(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.amountLabel}>Amount</Text>
+            <View style={styles.amountValueBox}>
+              <Text style={styles.amountValue}>₹{Number(amount || 0).toLocaleString()}</Text>
+              <View style={styles.amountEditPill}>
+                <Edit2 size={12} color="#7C3AED" />
+              </View>
+            </View>
+          </TouchableOpacity>
+
+          {/* SECTION: PAY WITH UPI APPS (PG STYLE - MATCHES IMAGE 2) */}
+          <View style={styles.pgSectionCard}>
+            <View style={styles.pgSectionHeader}>
+              <View style={styles.pgHeaderIconBadge}>
+                <Smartphone size={18} color="#7C3AED" strokeWidth={2.4} />
+              </View>
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={styles.pgSectionTitle}>Pay with UPI Apps</Text>
+                <Text style={styles.pgSectionSubtitle}>
+                  {installedApps.length > 0
+                    ? `${installedApps.length} installed app${installedApps.length > 1 ? 's' : ''} detected on device`
+                    : 'Instant 1-tap direct checkout'}
+                </Text>
+              </View>
+
+              {/* Overlapping circular brand logos preview (matching Image 2) */}
+              <View style={styles.pgOverlapLogosRow}>
+                <View style={[styles.pgMiniLogo, { zIndex: 4, marginLeft: 0 }]}>
+                  <GooglePayIcon size={26} />
+                </View>
+                <View style={[styles.pgMiniLogo, { zIndex: 3, marginLeft: -8 }]}>
+                  <PhonePeIcon size={26} />
+                </View>
+                <View style={[styles.pgMiniLogo, { zIndex: 2, marginLeft: -8 }]}>
+                  <PaytmIcon size={26} />
+                </View>
+                <View style={[styles.pgMiniLogo, { zIndex: 1, marginLeft: -8 }]}>
+                  <CredIcon size={26} />
+                </View>
+              </View>
+            </View>
+
+            {isDetectingApps ? (
+              <View style={styles.pgLoadingRow}>
+                <ActivityIndicator size="small" color="#7C3AED" />
+                <Text style={styles.pgLoadingText}>Checking available UPI apps on your phone...</Text>
+              </View>
+            ) : installedApps.length > 0 ? (
+              /* User has installed apps on phone -> show ONLY those installed apps! */
+              <View style={styles.pgAppsList}>
+                {installedApps.map((app) => {
+                  const isLaunching = launchingAppId === app.id;
+                  return (
+                    <TouchableOpacity
+                      key={app.id}
+                      style={styles.pgAppOption}
+                      onPress={() => handleLaunchUpiApp(app)}
+                      activeOpacity={0.78}
+                      disabled={Boolean(launchingAppId)}
+                    >
+                      <View style={styles.pgAppOptionLeft}>
+                        <View style={styles.pgAppLogoWrapper}>
+                          {app.renderLogo(44)}
+                        </View>
+                        <View style={styles.pgAppMeta}>
+                          <View style={styles.pgAppNameRow}>
+                            <Text style={styles.pgAppName}>{app.name}</Text>
+                            <View style={styles.pgInstalledTag}>
+                              <Check size={9} color="#15803D" strokeWidth={3} />
+                              <Text style={styles.pgInstalledTagText}>INSTALLED</Text>
+                            </View>
+                          </View>
+                          <Text style={styles.pgAppDesc}>
+                            Pay ₹{Number(amount || 0).toLocaleString()} directly via {app.name}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={[styles.pgPayNowBtn, { backgroundColor: app.primaryColor }]}>
+                        {isLaunching ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <>
+                            <Text style={styles.pgPayNowBtnText}>PAY NOW</Text>
+                            <ChevronRight size={13} color="#FFFFFF" strokeWidth={2.6} />
+                          </>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              /* If no apps detected (e.g. simulator/web) */
+              <View style={styles.pgFallbackBox}>
+                <View style={styles.pgFallbackTop}>
+                  <Text style={styles.pgFallbackTitle}>Pay via Any UPI App</Text>
+                  <Text style={styles.pgFallbackSub}>
+                    Launch your device's UPI payment sheet (PhonePe, Paytm, GPay, etc.)
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.pgOpenChooserBtn}
+                  onPress={() => handleLaunchUpiApp()}
+                  activeOpacity={0.85}
+                  disabled={Boolean(launchingAppId)}
+                >
+                  <LinearGradient
+                    colors={['#8B5CF6', '#7C3AED', '#6D28D9']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.pgChooserGradient}
+                  >
+                    {launchingAppId ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <ExternalLink size={16} color="#FFFFFF" strokeWidth={2.4} />
+                        <Text style={styles.pgChooserBtnText}>
+                          Pay ₹{Number(amount || 0).toLocaleString()} via UPI App
+                        </Text>
+                      </>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Note banner */}
+            <View style={styles.pgTipBanner}>
+              <Sparkles size={13} color="#7C3AED" strokeWidth={2.2} />
+              <Text style={styles.pgTipText}>
+                After payment in your UPI app, enter the 12-digit UTR and upload your screenshot below.
+              </Text>
+            </View>
+          </View>
+
+          {/* SECTION 2: PAYMENT VERIFICATION */}
+          <View style={[styles.sectionHeader, { marginTop: 32 }]}>
+            <View style={styles.sectionIconBadge}>
+              <ShieldCheck size={18} color="#7C3AED" strokeWidth={2.4} />
+            </View>
+            <Text style={styles.sectionTitle}>Payment Verification</Text>
+          </View>
+          <Text style={styles.verificationSubtitle}>
+            Enter the UTR number and upload a screenshot of your payment
+          </Text>
+
+          {/* Field: UTR Number */}
+          <View style={styles.fieldWrapper}>
+            <Text style={styles.fieldLabel}>UTR Number</Text>
+            <View style={styles.inputBox}>
+              <TextInput
+                style={styles.textInput}
+                value={utr}
+                onChangeText={(val) => {
+                  setUtr(val);
+                  if (submitError) setSubmitError(null);
+                }}
+                placeholder="e.g. 3452XXXXXX21"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="characters"
+              />
+              {utr.length > 0 && (
+                <TouchableOpacity onPress={() => setUtr('')} style={styles.clearBtn}>
+                  <X size={16} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Field: Payment Screenshot */}
+          <View style={styles.fieldWrapper}>
+            <Text style={styles.fieldLabel}>Payment Screenshot</Text>
+
+            {screenshotUri ? (
+              <View style={styles.screenshotPreviewCard}>
+                <Image source={{ uri: screenshotUri }} style={styles.screenshotThumb} />
+                <View style={styles.screenshotInfo}>
+                  <View style={styles.screenshotStatusRow}>
+                    <CheckCircle2 size={15} color="#10B981" strokeWidth={2.5} />
+                    <Text style={styles.screenshotStatusText}>Receipt attached</Text>
+                  </View>
+                  <Text style={styles.screenshotSubText}>Ready for verification</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.removeScreenshotBtn}
+                  onPress={() => setScreenshotUri(null)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <X size={17} color="#EF4444" strokeWidth={2.5} />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={styles.uploadPlaceholderCard}
+                onPress={() => setShowPickerSheet(true)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.uploadIconBox}>
+                  <Upload size={18} color="#7C3AED" strokeWidth={2.4} />
+                </View>
+                <Text style={styles.uploadPromptText}>Tap to upload screenshot</Text>
+                <ChevronRight size={19} color="#94A3B8" strokeWidth={2.2} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Error Banner */}
+          {submitError && (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorText}>{submitError}</Text>
+            </View>
+          )}
+        </ScrollView>
+      ) : (
+        /* DEPOSIT HISTORY TAB */
+        <ScrollView
+          contentContainerStyle={[styles.historyContent, { paddingBottom: bottomPadding + 20 }]}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.historyHeaderRow}>
+            <Text style={styles.historySectionTitle}>Your Deposit History</Text>
+            <TouchableOpacity onPress={loadHistory} activeOpacity={0.7} style={styles.refreshBtn}>
+              <RefreshCw size={15} color="#7C3AED" />
+              <Text style={styles.refreshBtnText}>Refresh</Text>
             </TouchableOpacity>
           </View>
 
-        </View>
-
-      </ScrollView>
-
-      {/* Sticky Confirm Button */}
-      <View style={styles.bottomBar}>
-        <TouchableOpacity 
-          style={[styles.confirmWrapper, !isFormValid && styles.confirmWrapperDisabled]}
-          onPress={handleSubmit}
-          activeOpacity={0.8}
-          disabled={!isFormValid}
-        >
-          <LinearGradient
-            colors={!isFormValid ? ['#2A2A2A', '#2A2A2A', '#2A2A2A'] : MINT_GRADIENT}
-            style={styles.confirmGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-          >
-            <ShieldCheck size={20} color={!isFormValid ? '#666' : '#000'} style={styles.btnIcon} />
-            <Text style={[styles.confirmText, !isFormValid && styles.confirmTextDisabled]}>
-              Confirm Payment
-            </Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </View>
-
-      {/* Confirmation Modal */}
-      <Modal
-        visible={showSuccessModal}
-        transparent={true}
-        animationType="fade"
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalIconCircle}>
-              <Wallet size={32} color={MINT} strokeWidth={2} />
-              <View style={styles.modalCheckBadge}>
-                <Check size={14} color="#000" strokeWidth={3} />
+          {isLoadingHistory ? (
+            <ActivityIndicator color="#7C3AED" style={{ marginVertical: 36 }} />
+          ) : depositHistory.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconCircle}>
+                <Clock size={36} color="#94A3B8" />
               </View>
+              <Text style={styles.emptyTitle}>No Deposits Yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Complete a UPI payment and upload your receipt to add funds to your wallet.
+              </Text>
             </View>
-            <Text style={styles.modalTitle}>Processing Deposit</Text>
+          ) : (
+            depositHistory.map((item) => {
+              const statusColor =
+                item.status === 'approved'
+                  ? '#10B981'
+                  : item.status === 'rejected'
+                    ? '#EF4444'
+                    : '#F59E0B';
+
+              return (
+                <View key={item._id} style={styles.historyCard}>
+                  <View style={styles.historyCardTop}>
+                    <View>
+                      <Text style={styles.historyAmount}>₹ {item.amount.toLocaleString()}</Text>
+                      <Text style={styles.historyRef}>Ref: {item.transactionRef}</Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.statusBadge,
+                        { backgroundColor: `${statusColor}14`, borderColor: statusColor },
+                      ]}
+                    >
+                      <Text style={[styles.statusBadgeText, { color: statusColor }]}>
+                        {item.status.toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.historyCardDivider} />
+
+                  <View style={styles.historyCardBottom}>
+                    <Text style={styles.historyDate}>
+                      {new Date(item.createdAt).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </Text>
+                    {item.plan?.name && (
+                      <View style={styles.historyPlanPill}>
+                        <Text style={styles.historyPlanText}>{item.plan.name}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+      )}
+
+      {/* BOTTOM CONFIRM BUTTON (Deposit Tab) */}
+      {activeTab === 'deposit' && (
+        <View style={[styles.bottomBar, { paddingBottom: bottomPadding }]}>
+          <TouchableOpacity
+            style={[styles.confirmBtnWrapper, isSubmitting && { opacity: 0.7 }]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+            activeOpacity={0.88}
+          >
+            <LinearGradient
+              colors={['#8B5CF6', '#7C3AED', '#6D28D9']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.confirmGradient}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.confirmBtnText}>Confirm Payment</Text>
+              )}
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Image Picker Sheet Modal */}
+      <Modal
+        visible={showPickerSheet}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPickerSheet(false)}
+      >
+        <TouchableOpacity
+          style={styles.sheetBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowPickerSheet(false)}
+        >
+          <View style={styles.sheetCard}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>Upload Payment Screenshot</Text>
+            <Text style={styles.sheetSubtitle}>Attach proof of your successful UPI transaction</Text>
+
+            <TouchableOpacity
+              style={styles.sheetOption}
+              onPress={handlePickFromGallery}
+              activeOpacity={0.7}
+            >
+              <View style={styles.sheetOptionIconBox}>
+                <ImageIcon size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.sheetOptionTitle}>Choose from Gallery</Text>
+                <Text style={styles.sheetOptionDesc}>Select screenshot from your photo library</Text>
+              </View>
+              <ChevronRight size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sheetOption}
+              onPress={handleTakePhoto}
+              activeOpacity={0.7}
+            >
+              <View style={styles.sheetOptionIconBox}>
+                <Camera size={20} color="#7C3AED" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.sheetOptionTitle}>Take Photo</Text>
+                <Text style={styles.sheetOptionDesc}>Capture screenshot with camera</Text>
+              </View>
+              <ChevronRight size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.sheetCancelBtn}
+              onPress={() => setShowPickerSheet(false)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Edit Amount Modal */}
+      <Modal
+        visible={showEditAmountModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEditAmountModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <View style={styles.amountModalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Set Deposit Amount</Text>
+              <TouchableOpacity onPress={() => setShowEditAmountModal(false)}>
+                <X size={20} color="#94A3B8" />
+              </TouchableOpacity>
+            </View>
+
             <Text style={styles.modalSubtitle}>
-              Your verification details have been received. The funds will be credited to your wallet momentarily.
+              Enter custom deposit amount or pick a membership package:
             </Text>
-            <TouchableOpacity style={styles.modalButton} onPress={handleCloseModal} activeOpacity={0.8}>
+
+            {/* Custom Input */}
+            <View style={styles.modalAmountInputRow}>
+              <Text style={styles.modalCurrencySymbol}>₹</Text>
+              <TextInput
+                style={styles.modalAmountInput}
+                value={tempAmount}
+                onChangeText={(val) => setTempAmount(val.replace(/[^0-9]/g, ''))}
+                placeholder="1000"
+                placeholderTextColor="#94A3B8"
+                keyboardType="number-pad"
+                autoFocus
+              />
+            </View>
+
+            {/* Plans List Chips */}
+            {plans.length > 0 && (
+              <View style={{ marginTop: 16 }}>
+                <Text style={styles.quickSelectLabel}>Popular Packages</Text>
+                <View style={styles.planChipsGrid}>
+                  {plans.map((p) => {
+                    const isSelected = tempAmount === String(p.amount);
+                    return (
+                      <TouchableOpacity
+                        key={p._id}
+                        style={[styles.planChip, isSelected && styles.planChipActive]}
+                        onPress={() => handleSelectPlan(p)}
+                        activeOpacity={0.75}
+                      >
+                        <Sparkles size={12} color={isSelected ? '#7C3AED' : '#64748B'} />
+                        <Text style={[styles.planChipText, isSelected && styles.planChipTextActive]}>
+                          ₹{p.amount} • {p.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.saveAmountBtn}
+              onPress={handleSaveAmount}
+              activeOpacity={0.85}
+            >
               <LinearGradient
-                colors={MINT_GRADIENT}
-                style={styles.modalButtonGradient}
+                colors={['#8B5CF6', '#7C3AED', '#6D28D9']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
+                style={styles.saveAmountGradient}
               >
-                <Text style={styles.modalButtonText}>View Wallet</Text>
+                <Text style={styles.saveAmountText}>Update Amount</Text>
               </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Success Modal */}
+      <Modal visible={showSuccessModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.successIconCircle}>
+              <CheckCircle2 size={44} color="#10B981" />
+            </View>
+            <Text style={styles.modalTitle}>Payment Submitted!</Text>
+            <Text style={styles.modalDesc}>
+              Your deposit request with UTR <Text style={{ fontWeight: '700', color: '#0F172A' }}>{utr}</Text> has
+              been submitted. It will be verified and credited to your wallet balance shortly.
+            </Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              activeOpacity={0.85}
+              onPress={handleSuccessClose}
+            >
+              <Text style={styles.modalButtonText}>View in Deposit History</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
-
     </KeyboardAvoidingView>
   );
 }
@@ -297,399 +942,985 @@ export default function DepositScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: DARK_BG,
+    backgroundColor: '#F8FAFC',
   },
+
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    paddingBottom: 12,
   },
-  backButton: {
+  headerTitle: {
+    fontSize: 18.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  circleButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: CARD_BG,
-    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#F1F5F9',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
+  circleButtonActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
   },
-  headerRightPlaceholder: {
-    width: 40,
-  },
-  content: {
+
+  // Main Scroll
+  scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 120, // Space for bottom bar
+    paddingTop: 12,
   },
-  stepHeaderRow: {
+
+  // Section Headers
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
-    gap: 12,
+    gap: 8,
+    marginBottom: 14,
   },
-  stepBadge: {
+  sectionIconBadge: {
     width: 28,
     height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(0, 208, 156, 0.15)',
+    borderRadius: 8,
+    backgroundColor: '#F5F3FF',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 208, 156, 0.3)',
   },
-  stepBadgeText: {
-    color: MINT,
-    fontSize: 14,
-    fontWeight: '700',
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
   },
-  stepTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
-  },
-  paymentCard: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 208, 156, 0.2)',
-    marginBottom: 32,
-    backgroundColor: CARD_BG,
-  },
-  paymentCardGradient: {
-    padding: 24,
-  },
-  amountContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  amountLabel: {
-    fontSize: 13,
-    color: TEXT_MUTED,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  amountValue: {
-    fontSize: 38,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  amountDecimal: {
-    fontSize: 24,
-    color: TEXT_MUTED,
-  },
-  qrContainer: {
-    alignItems: 'center',
-  },
-  qrWrapper: {
+
+  // QR Code Card
+  qrCard: {
+    alignSelf: 'center',
+    width: 270,
+    height: 270,
     backgroundColor: '#FFFFFF',
-    padding: 12,
+    borderRadius: 28,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#F1F5F9',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 22,
+    elevation: 4,
+    position: 'relative',
+  },
+  qrFrameWrapper: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cornerBracketTL: {
+    position: 'absolute',
+    top: -2,
+    left: -2,
+    width: 42,
+    height: 42,
+    borderTopWidth: 3.5,
+    borderLeftWidth: 3.5,
+    borderTopLeftRadius: 18,
+    borderColor: '#7C3AED',
+    zIndex: 10,
+  },
+  cornerBracketBR: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 42,
+    height: 42,
+    borderBottomWidth: 3.5,
+    borderRightWidth: 3.5,
+    borderBottomRightRadius: 18,
+    borderColor: '#7C3AED',
+    zIndex: 10,
+  },
+  qrInnerContainer: {
+    width: '100%',
+    height: '100%',
     borderRadius: 16,
-    marginBottom: 16,
-    shadowColor: MINT,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
   qrImage: {
-    width: 180,
-    height: 180,
+    width: '100%',
+    height: '100%',
   },
-  scanText: {
-    fontSize: 13,
-    color: TEXT_MUTED,
-    marginBottom: 20,
+  qrCenterZoomBtn: {
+    position: 'absolute',
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 20,
   },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    marginVertical: 20,
+  hideQrPill: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1.2,
+    borderColor: '#EDE9FE',
+    gap: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 20,
+  },
+  hideQrPillText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  qrLoaderBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  qrLoaderText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 10,
+    fontWeight: '500',
+  },
+  viewQrCtaContainer: {
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  viewQrCtaBtn: {
+    borderRadius: 22,
+    overflow: 'hidden',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  viewQrGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    gap: 7,
+    borderRadius: 22,
+  },
+  viewQrCtaText: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+
+  // Below QR text & rows
+  scanSubtitle: {
+    fontSize: 13.5,
+    fontWeight: '500',
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 14,
+    marginBottom: 4,
   },
   upiRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  upiDetails: {
-    flex: 1,
+    justifyContent: 'center',
+    marginTop: 6,
+    gap: 4,
   },
   upiLabel: {
-    fontSize: 12,
-    color: TEXT_MUTED,
-    marginBottom: 4,
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#64748B',
   },
   upiValue: {
     fontSize: 15,
-    color: '#FFFFFF',
-    fontWeight: '600',
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    color: '#0F172A',
   },
-  copyButton: {
+  copyBtn: {
+    padding: 4,
+    marginLeft: 2,
+  },
+  copiedTag: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginLeft: 4,
+  },
+  copiedTagText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+
+  // Amount Row
+  amountRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    justifyContent: 'center',
+    marginTop: 10,
+    gap: 8,
+  },
+  amountLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#64748B',
+  },
+  amountValueBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  amountValue: {
+    fontSize: 27,
+    fontWeight: '900',
+    color: '#0F172A',
+    letterSpacing: -0.5,
+  },
+  amountEditPill: {
+    backgroundColor: '#F5F3FF',
+    padding: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#EDE9FE',
+  },
+
+  // PG-Style Pay with UPI Apps Section (Matches Image 2)
+  pgSectionCard: {
+    marginTop: 24,
+    marginBottom: 8,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1.5,
+    borderColor: '#F1F5F9',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  pgSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  pgHeaderIconBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#F5F3FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pgSectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
+  },
+  pgSectionSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  pgOverlapLogosRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pgMiniLogo: {
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+  },
+  pgLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 8,
+  },
+  pgLoadingText: {
+    fontSize: 12.5,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  pgAppsList: {
+    gap: 10,
+  },
+  pgAppOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1.2,
+    borderColor: '#E2E8F0',
+  },
+  pgAppOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 10,
+  },
+  pgAppLogoWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    overflow: 'hidden',
+  },
+  pgAppMeta: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  pgAppNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  pgAppName: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  pgInstalledTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    gap: 3,
+  },
+  pgInstalledTagText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#15803D',
+    letterSpacing: 0.2,
+  },
+  pgAppDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  pgPayNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    gap: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  copyButtonSuccess: {
-    backgroundColor: 'rgba(0, 208, 156, 0.1)',
-    borderColor: 'rgba(0, 208, 156, 0.3)',
-  },
-  copyButtonText: {
+  pgPayNowBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
+    letterSpacing: 0.3,
   },
-  verificationContainer: {
-    gap: 20,
-  },
-  infoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 208, 156, 0.08)',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 208, 156, 0.2)',
-    gap: 10,
-  },
-  infoBannerText: {
-    flex: 1,
-    color: MINT,
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  inputGroup: {
-    gap: 8,
-  },
-  inputLabel: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '500',
-  },
-  requiredAsterisk: {
-    color: '#EF4444',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: CARD_BG,
+  pgFallbackBox: {
+    backgroundColor: '#F8FAFC',
     borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    paddingHorizontal: 16,
-    height: 56,
+    borderColor: '#E2E8F0',
   },
-  inputContainerActive: {
-    borderColor: MINT,
-    backgroundColor: 'rgba(0, 208, 156, 0.03)',
+  pgFallbackTop: {
+    marginBottom: 10,
   },
-  input: {
-    flex: 1,
+  pgFallbackTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  pgFallbackSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  pgOpenChooserBtn: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  pgChooserGradient: {
+    height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    borderRadius: 12,
+  },
+  pgChooserBtnText: {
+    fontSize: 13.5,
+    fontWeight: '800',
     color: '#FFFFFF',
-    fontSize: 16,
-    height: '100%',
-    letterSpacing: 1,
   },
-  inputCheck: {
+  pgTipBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FAF5FF',
+    borderRadius: 10,
+    padding: 9,
+    marginTop: 14,
+    gap: 7,
+    borderWidth: 1,
+    borderColor: '#F3E8FF',
+  },
+  pgTipText: {
+    flex: 1,
+    fontSize: 11,
+    color: '#6B21A8',
+    fontWeight: '500',
+    lineHeight: 15,
+  },
+
+  // Verification Section Subtitle
+  verificationSubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+
+  // Field Inputs
+  fieldWrapper: {
+    marginBottom: 16,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 7,
+  },
+  inputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 52,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 3,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
+    height: '100%',
+  },
+  clearBtn: {
+    padding: 6,
+  },
+
+  // Screenshot Upload Box
+  uploadPlaceholderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 58,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 3,
+  },
+  uploadIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#F5F3FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadPromptText: {
+    flex: 1,
+    fontSize: 14.5,
+    fontWeight: '600',
+    color: '#64748B',
     marginLeft: 12,
   },
-  uploadBox: {
-    backgroundColor: CARD_BG,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    borderStyle: 'dashed',
-    padding: 20,
-  },
-  uploadBoxSuccess: {
-    borderColor: MINT,
-    borderStyle: 'solid',
-    backgroundColor: 'rgba(0, 208, 156, 0.05)',
-  },
-  uploadContent: {
+
+  // Preview Card
+  screenshotPreviewCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#DDD6FE',
+    borderRadius: 14,
+    padding: 10,
   },
-  uploadIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  screenshotThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
   },
-  uploadIconCircleSuccess: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0, 208, 156, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  uploadTexts: {
+  screenshotInfo: {
     flex: 1,
-    justifyContent: 'center',
+    marginLeft: 12,
   },
-  uploadTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 4,
+  screenshotStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
   },
-  uploadSubtitle: {
-    color: TEXT_MUTED,
-    fontSize: 12,
+  screenshotStatusText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#0F172A',
   },
-  uploadTitleSuccess: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  uploadSubtitleSuccess: {
-    color: MINT,
-    fontSize: 12,
+  screenshotSubText: {
+    fontSize: 11.5,
+    color: '#10B981',
     fontWeight: '500',
+    marginTop: 2,
   },
-  removeUploadBtn: {
+  removeScreenshotBtn: {
     padding: 8,
   },
-  removeUploadText: {
-    color: '#EF4444',
-    fontSize: 13,
-    fontWeight: '600',
+
+  // Error Banner
+  errorBanner: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
   },
+  errorText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#DC2626',
+    textAlign: 'center',
+  },
+
+  // Bottom Fixed Bar
   bottomBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    backgroundColor: '#F8FAFC',
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 24,
-    backgroundColor: DARK_BG,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.05)',
+    borderTopColor: '#F1F5F9',
   },
-  confirmWrapper: {
-    borderRadius: 16,
+  confirmBtnWrapper: {
+    borderRadius: 27,
     overflow: 'hidden',
-  },
-  confirmWrapperDisabled: {
-    opacity: 0.6,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.32,
+    shadowRadius: 14,
+    elevation: 6,
   },
   confirmGradient: {
-    flexDirection: 'row',
-    paddingVertical: 18,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    borderRadius: 27,
   },
-  btnIcon: {
-    marginTop: -1,
+  confirmBtnText: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
   },
-  confirmText: {
-    color: '#000000',
-    fontSize: 16,
+
+  // Modals & Sheets
+  sheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  sheetCard: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 36,
+  },
+  sheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+  },
+  sheetSubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    marginBottom: 18,
+  },
+  sheetOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  sheetOptionIconBox: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#F5F3FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetOptionTitle: {
+    fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    color: '#0F172A',
   },
-  confirmTextDisabled: {
-    color: '#666',
+  sheetOptionDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
   },
+  sheetCancelBtn: {
+    marginTop: 18,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  sheetCancelText: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+
+  // Amount Modal
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
+    paddingHorizontal: 24,
   },
-  modalContainer: {
-    backgroundColor: CARD_BG,
-    borderRadius: 28,
-    padding: 32,
-    alignItems: 'center',
-    width: '100%',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+  amountModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 22,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.1,
     shadowRadius: 20,
-    elevation: 10,
+    elevation: 8,
   },
-  modalIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(0, 208, 156, 0.1)',
-    justifyContent: 'center',
+  modalHeaderRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 208, 156, 0.2)',
-    position: 'relative',
-  },
-  modalCheckBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: MINT,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: CARD_BG,
+    justifyContent: 'space-between',
+    marginBottom: 6,
   },
   modalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 12,
-    textAlign: 'center',
-    letterSpacing: 0.3,
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
   },
   modalSubtitle: {
-    fontSize: 14,
-    color: TEXT_MUTED,
-    textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 22,
+    fontSize: 13,
+    color: '#64748B',
+    marginBottom: 16,
   },
-  modalButton: {
-    width: '100%',
-    borderRadius: 16,
+  modalAmountInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#7C3AED',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    height: 56,
+  },
+  modalCurrencySymbol: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#7C3AED',
+    marginRight: 6,
+  },
+  modalAmountInput: {
+    flex: 1,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  quickSelectLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+  planChipsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  planChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    gap: 5,
+  },
+  planChipActive: {
+    backgroundColor: '#F5F3FF',
+    borderColor: '#7C3AED',
+  },
+  planChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  planChipTextActive: {
+    color: '#7C3AED',
+    fontWeight: '700',
+  },
+  saveAmountBtn: {
+    borderRadius: 14,
     overflow: 'hidden',
+    marginTop: 20,
   },
-  modalButtonGradient: {
-    paddingVertical: 18,
+  saveAmountGradient: {
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveAmountText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Success Modal Card
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
     alignItems: 'center',
   },
+  successIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  modalDesc: {
+    fontSize: 13.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginVertical: 12,
+  },
+  modalButton: {
+    backgroundColor: '#7C3AED',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 10,
+  },
   modalButtonText: {
-    color: '#000000',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    color: '#FFFFFF',
+  },
+
+  // History Tab Styles
+  historyContent: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  historyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  historySectionTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  refreshBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F5F3FF',
+  },
+  refreshBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 20,
+  },
+  emptyIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  historyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1.5,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  historyCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  historyAmount: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  historyRef: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  statusBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  historyCardDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginVertical: 12,
+  },
+  historyCardBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  historyDate: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  historyPlanPill: {
+    backgroundColor: '#F5F3FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  historyPlanText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#7C3AED',
   },
 });

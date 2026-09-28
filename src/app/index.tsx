@@ -6,19 +6,27 @@ import {
   Animated,
   Dimensions,
   Platform,
+  Image,
+  Modal,
+  TouchableOpacity,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import { ShieldCheck, Sparkles, Lock } from 'lucide-react-native';
+import { AlertTriangle, DownloadCloud, RefreshCw } from 'lucide-react-native';
+import { useAuth } from '../context/AuthContext';
 
 const { width } = Dimensions.get('window');
-const DARK_BG = '#050505';
-const MINT_GRADIENT = ['#00E5AE', '#00D09C', '#00A67D'] as const;
+const LIGHT_BG = '#F4F6FC';
+const PURPLE_GRADIENT = ['#8B5CF6', '#7C3AED', '#6D28D9'] as const;
 
 export default function AppSplashScreen() {
   const router = useRouter();
+  const { isAuthenticated, isLoading, appSettings, checkAppSettings } = useAuth();
   const [progress, setProgress] = useState(0);
+
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.85)).current;
@@ -41,7 +49,7 @@ export default function AppSplashScreen() {
 
     // 2. Dynamic progress ticker
     const startTime = Date.now();
-    const duration = 1500; // 1.5 seconds
+    const duration = 1400;
 
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime;
@@ -50,25 +58,62 @@ export default function AppSplashScreen() {
 
       if (pct >= 100) {
         clearInterval(interval);
-        // Smooth exit transition
-        setTimeout(() => {
-          Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 350,
-            useNativeDriver: true,
-          }).start(() => {
-            router.replace('/login');
-          });
-        }, 300);
       }
     }, 20);
 
     return () => clearInterval(interval);
   }, []);
 
+  // Handle navigation once progress is complete and auth status is determined
+  useEffect(() => {
+    if (progress < 100 || isLoading) return;
+
+    // Check system maintenance
+    if (appSettings?.maintenanceMode) {
+      setShowMaintenanceModal(true);
+      return;
+    }
+
+    // Check force update
+    if (appSettings?.forceUpdate) {
+      setShowUpdateModal(true);
+      return;
+    }
+
+    // Smooth exit transition
+    const timeout = setTimeout(() => {
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }).start(() => {
+        if (isAuthenticated) {
+          router.replace('/(tabs)');
+        } else {
+          router.replace('/login');
+        }
+      });
+    }, 250);
+
+    return () => clearTimeout(timeout);
+  }, [progress, isLoading, appSettings, isAuthenticated, router, fadeAnim]);
+
+  const handleRetrySettings = async () => {
+    const updated = await checkAppSettings();
+    if (updated && !updated.maintenanceMode && !updated.forceUpdate) {
+      setShowMaintenanceModal(false);
+      setShowUpdateModal(false);
+      if (isAuthenticated) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/login');
+      }
+    }
+  };
+
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
 
       <Animated.View
         style={[
@@ -79,24 +124,24 @@ export default function AppSplashScreen() {
           },
         ]}
       >
-        {/* Sleek Minimalist Logo */}
+        {/* Sleek 3D Purple Logo */}
         <View style={styles.logoContainer}>
-          <View style={styles.logoInner}>
-            <Text style={styles.logoLetter}>P</Text>
-          </View>
+          <Image
+            source={require('../../assets/images/payu-purple-logo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
 
         {/* App Title & Subtitle */}
         <Text style={styles.appName}>PayU</Text>
-        <Text style={styles.appTagline}>
-          Fast, Secure Payments
-        </Text>
+        <Text style={styles.appTagline}>Fast, Secure Payments</Text>
 
-        {/* Minimal Progress Bar (Slider only) */}
+        {/* Minimal Progress Bar */}
         <View style={styles.progressSection}>
           <View style={styles.progressTrack}>
             <LinearGradient
-              colors={MINT_GRADIENT}
+              colors={PURPLE_GRADIENT}
               style={[styles.progressFill, { width: `${progress}%` }]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
@@ -107,11 +152,57 @@ export default function AppSplashScreen() {
 
       {/* Footer Security Badge */}
       <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
-        <View style={styles.securityRow}>
-       
-        </View>
-        <Text style={styles.versionText}>v1.1.8 (Build 2026)</Text>
+        <Text style={styles.versionText}>
+          v{appSettings?.currentVersion || '1.0.0'} (GDPE Production)
+        </Text>
       </Animated.View>
+
+      {/* Maintenance Mode Modal */}
+      <Modal visible={showMaintenanceModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={[styles.modalIconWrap, { backgroundColor: '#FEF3C7' }]}>
+              <AlertTriangle size={36} color="#D97706" />
+            </View>
+            <Text style={styles.modalTitle}>System Maintenance</Text>
+            <Text style={styles.modalDesc}>
+              {appSettings?.maintenanceMessage ||
+                'App is under scheduled maintenance. Please check back later.'}
+            </Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              activeOpacity={0.8}
+              onPress={handleRetrySettings}
+            >
+              <RefreshCw size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.modalButtonText}>Check Status Again</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Force Update Modal */}
+      <Modal visible={showUpdateModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={[styles.modalIconWrap, { backgroundColor: '#EDE9FE' }]}>
+              <DownloadCloud size={36} color="#7C3AED" />
+            </View>
+            <Text style={styles.modalTitle}>Update Required</Text>
+            <Text style={styles.modalDesc}>
+              {appSettings?.updateMessage ||
+                'A newer version of the app is available. Please update to continue.'}
+            </Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              activeOpacity={0.8}
+              onPress={handleRetrySettings}
+            >
+              <Text style={styles.modalButtonText}>Update Now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -119,7 +210,7 @@ export default function AppSplashScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: DARK_BG,
+    backgroundColor: LIGHT_BG,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
@@ -131,36 +222,32 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     marginBottom: 24,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 18,
+    elevation: 8,
   },
-  logoInner: {
-    width: 64,
-    height: 64,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoLetter: {
-    color: '#050505',
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -1,
+  logoImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   appName: {
     fontSize: 36,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#0F172A',
     letterSpacing: 2,
     marginBottom: 8,
   },
   appTagline: {
-    fontSize: 11,
-    color: '#8B93A5',
+    fontSize: 12,
+    color: '#64748B',
     fontWeight: '600',
     letterSpacing: 1.2,
     textAlign: 'center',
     marginBottom: 40,
-    lineHeight: 16,
+    lineHeight: 18,
     maxWidth: 280,
   },
   progressSection: {
@@ -168,8 +255,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   progressTrack: {
-    height: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    height: 4,
+    backgroundColor: '#E2E8F0',
     borderRadius: 2,
     overflow: 'hidden',
     width: '100%',
@@ -179,40 +266,72 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 2,
   },
-  progressLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  statusText: {
-    fontSize: 11,
-    color: '#888894',
-    fontWeight: '500',
-  },
-  percentText: {
-    fontSize: 11,
-    color: '#00D09C',
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
-  },
   footer: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 44 : 24,
     alignItems: 'center',
     gap: 4,
   },
-  securityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  footerSecurity: {
+  versionText: {
     fontSize: 11,
-    color: '#888894',
+    color: '#94A3B8',
     fontWeight: '500',
   },
-  versionText: {
-    fontSize: 10,
-    color: '#4B4958',
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalDesc: {
+    fontSize: 13.5,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#7C3AED',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+    width: '100%',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

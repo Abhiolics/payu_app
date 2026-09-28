@@ -1,22 +1,27 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { Bell, Copy, Check } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { Colors } from '../constants/Colors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../context/AuthContext';
 
 export default function Header() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { user, unreadCount } = useAuth();
   const [copied, setCopied] = useState(false);
+
+  const displayName = user?.fullName || 'User';
+  const avatarLetter = displayName.charAt(0).toUpperCase();
+  const displayId = user?._id ? user._id.slice(-8).toUpperCase() : 'MEMBER';
 
   const handleCopyId = async () => {
     try {
-      await Clipboard.setStringAsync('228013');
+      await Clipboard.setStringAsync(displayId);
     } catch {
       if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        navigator.clipboard.writeText('228013');
+        navigator.clipboard.writeText(displayId);
       }
     }
     setCopied(true);
@@ -24,49 +29,71 @@ export default function Header() {
       setCopied(false);
     }, 2000);
   };
-  
+
+  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? 24 : 12) + 8;
+
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 10 }]}>
-      <View style={styles.profileSection}>
-        <View style={styles.avatarContainer}>
-          <View style={styles.avatarInner}>
-            <Text style={styles.avatarText}>K</Text>
-          </View>
-        </View>
-        <View style={styles.userInfo}>
-          <Text style={styles.username}>Katty2026</Text>
-          <TouchableOpacity 
-            style={styles.idContainer} 
+    <View style={[styles.container, { paddingTop: topPadding }]}>
+      {/* User Info Left Section */}
+      <View style={styles.leftSection}>
+        {/* Avatar Circle with letter */}
+        <TouchableOpacity
+          style={styles.avatar}
+          onPress={() => router.push('/(tabs)/profile')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.avatarText}>{avatarLetter}</Text>
+        </TouchableOpacity>
+
+        {/* Username & ID */}
+        <View style={styles.userTextContainer}>
+          <Text style={styles.username} numberOfLines={1}>
+            {displayName}
+          </Text>
+          <TouchableOpacity
+            style={styles.idRow}
             onPress={handleCopyId}
             activeOpacity={0.7}
             accessibilityLabel="Copy User ID"
           >
-            <Text style={styles.userId}>ID: 228013</Text>
+            <Text style={styles.userId}>ID: {displayId}</Text>
             <View style={styles.copyIconWrapper}>
               {copied ? (
-                <Check size={12} color={Colors.primary} strokeWidth={2.5} />
+                <Check size={13} color="#7C3AED" strokeWidth={2.5} />
               ) : (
-                <Copy size={12} color={Colors.textMuted} strokeWidth={1.8} />
+                <Copy size={13} color="#64748B" strokeWidth={1.8} />
               )}
             </View>
             {copied && (
               <View style={styles.copiedBadge}>
-                <Text style={styles.copiedBadgeText}>Copied</Text>
+                <Text style={styles.copiedText}>Copied</Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
       </View>
-      
-      <TouchableOpacity 
-        style={styles.bellButton}
-        onPress={() => router.push('/messages')}
-        activeOpacity={0.7}
-        accessibilityLabel="View Messages"
-      >
-        <Bell size={20} color={Colors.text} />
-        <View style={styles.notificationDot} />
-      </TouchableOpacity>
+
+      {/* Action Icons Right Section */}
+      <View style={styles.rightSection}>
+        {/* Bell with red notification badge */}
+        <TouchableOpacity
+          style={styles.iconButton}
+          onPress={() => router.push('/messages')}
+          activeOpacity={0.7}
+          accessibilityLabel="Notifications"
+        >
+          <Bell size={22} color="#0F172A" strokeWidth={2} />
+          {unreadCount > 0 && (
+            <View style={styles.notificationDot}>
+              {unreadCount > 9 ? (
+                <Text style={styles.dotText}>9+</Text>
+              ) : (
+                <Text style={styles.dotText}>{unreadCount}</Text>
+              )}
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -76,96 +103,103 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    backgroundColor: 'transparent',
   },
-  profileSection: {
+  leftSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.cardBackground,
-    padding: 8,
-    paddingRight: 20,
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: Colors.primaryMuted,
+    flex: 1,
+    marginRight: 10,
   },
-  avatarContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.primary,
-    padding: 2,
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#EDE9FE',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 12,
   },
-  avatarInner: {
-    flex: 1,
-    borderRadius: 18,
-    backgroundColor: '#00A67D', // Darker mint for inner circle
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   avatarText: {
-    color: '#FFF',
-    fontWeight: 'bold',
-    fontSize: 16,
+    color: '#7C3AED',
+    fontSize: 20,
+    fontWeight: '700',
   },
-  userInfo: {
+  userTextContainer: {
     justifyContent: 'center',
+    flex: 1,
   },
   username: {
-    color: Colors.text,
-    fontSize: 14,
-    fontWeight: '600',
+    color: '#0F172A',
+    fontSize: 16.5,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    marginBottom: 2,
   },
-  idContainer: {
+  idRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 3,
   },
   userId: {
-    color: Colors.textMuted,
-    fontSize: 11,
+    color: '#64748B',
+    fontSize: 12.5,
     fontWeight: '500',
   },
   copyIconWrapper: {
-    marginLeft: 5,
-    padding: 2,
+    marginLeft: 6,
     justifyContent: 'center',
     alignItems: 'center',
   },
   copiedBadge: {
     marginLeft: 6,
-    backgroundColor: 'rgba(0, 208, 156, 0.2)',
+    backgroundColor: '#EDE9FE',
     paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 8,
-    borderWidth: 0.5,
-    borderColor: Colors.primary,
+    paddingVertical: 1.5,
+    borderRadius: 6,
   },
-  copiedBadgeText: {
-    color: Colors.primary,
-    fontSize: 9,
-    fontWeight: '700',
+  copiedText: {
+    color: '#6D28D9',
+    fontSize: 10,
+    fontWeight: '600',
   },
-  bellButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.cardBackground,
+  rightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.primaryMuted,
+    position: 'relative',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
   },
   notificationDot: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.primary,
-    borderWidth: 2,
-    borderColor: Colors.cardBackground,
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#EF4444',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+  dotText: {
+    color: '#FFFFFF',
+    fontSize: 8.5,
+    fontWeight: '800',
   },
 });

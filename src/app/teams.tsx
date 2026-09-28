@@ -1,154 +1,288 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Dimensions, Platform, Share } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Gift, ArrowLeft } from 'lucide-react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  Platform,
+  Share,
+  ActivityIndicator,
+  Modal,
+} from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  ArrowLeft,
+  Gift,
+  Share2,
+  Copy,
+  Check,
+  ChevronRight,
+  Sparkles,
+  Users,
+  Award,
+  ArrowRight,
+  TrendingUp,
+  X,
+} from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
-
-const { width } = Dimensions.get('window');
-const DARK_BG = '#0A0A0A';
-const CARD_BG = '#15141A';
-const CARD_BG_LIGHT = '#1E1D24';
-const TEXT_MUTED = '#888894';
-const YELLOW_TEXT = '#F3C623';
-
-const INVITE_LINK = 'https://payu.trade/invite?code=228013';
+import { useAuth } from '../context/AuthContext';
+import { getTeamStats, TeamStats } from '../services';
 
 export default function TeamsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? 36 : 20) + 10;
+  const { user } = useAuth();
+
+  const [stats, setStats] = useState<TeamStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+
+  useEffect(() => {
+    getTeamStats(user)
+      .then((data) => setStats(data))
+      .catch((err) => console.warn('Failed to load team stats:', err))
+      .finally(() => setIsLoading(false));
+  }, [user]);
+
+  const inviteLink = stats?.inviteLink || `https://payu.trade/invite?code=VIP2026`;
 
   const handleShare = async () => {
-    // 1. Copy link to clipboard
     try {
-      await Clipboard.setStringAsync(INVITE_LINK);
+      await Clipboard.setStringAsync(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        navigator.clipboard.writeText(INVITE_LINK);
-      }
+      // Ignore
     }
-    setCopied(true);
-    setTimeout(() => {
-      setCopied(false);
-    }, 2000);
 
-    // 2. Open native Share sheet so user can share on other apps
     try {
-      await Share.share(
-        {
-          title: 'PayU Team Invitation',
-          message: `Join my team on PayU! Invite Link: ${INVITE_LINK}`,
-          url: INVITE_LINK,
-        },
-        {
-          dialogTitle: 'Share Invite Link',
-        }
-      );
-    } catch (error) {
-      console.log('Error sharing:', error);
+      await Share.share({
+        title: 'Join My Team on PayU',
+        message: `Join my team on PayU and start earning daily commissions! Invitation Link: ${inviteLink}`,
+        url: inviteLink,
+      });
+    } catch (err) {
+      console.warn('Share error:', err);
     }
   };
 
+  const totalCommissions = stats?.totalCommissions ?? 0;
+  const commsYesterday = stats?.commissionsYesterday ?? 0;
+  const commsToday = stats?.commissionsToday ?? 0;
+  const teamMembers = stats?.totalTeamMembers ?? 0;
+  const teamDeposit = stats?.totalTeamDeposit ?? 0;
+  const newMembersToday = stats?.newMembersToday ?? 0;
+  const newMembersYesterday = stats?.newMembersYesterday ?? 0;
+  const currentVol = stats?.currentCommissionVolume ?? 0;
+  const targetVol = stats?.targetCommissionVolume ?? 50000;
+  const currentLevel = stats?.currentLevel ?? 'Level A';
+  const progressPct = targetVol > 0 ? Math.min(Math.round((currentVol / targetVol) * 100), 100) : 0;
+
   return (
     <View style={styles.safeArea}>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
+
+      {/* Header */}
       <View style={[styles.header, { paddingTop: topPadding }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <ArrowLeft size={24} color="#FFFFFF" />
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
+          activeOpacity={0.7}
+        >
+          <ArrowLeft size={20} color="#0F172A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Teams</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {isLoading ? (
+          <ActivityIndicator color="#7C3AED" style={{ marginVertical: 40 }} />
+        ) : (
+          <>
+            {/* 1. Hero Card */}
+            <LinearGradient
+              colors={['#8B5CF6', '#7C3AED', '#6D28D9', '#4C1D95']}
+              locations={[0, 0.35, 0.72, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.heroCard}
+            >
+              <Text style={styles.heroSub}>My Total Commissions</Text>
+              <Text style={styles.heroAmount}>
+                +₹{totalCommissions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}/-
+              </Text>
 
-        {/* Main Hero Card */}
-        <LinearGradient
-          colors={['#F28627', '#E25C1D', '#C83C12']}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={styles.heroCard}
-        >
-          <Text style={styles.heroSubtitle}>My Total Commissions</Text>
-          <Text style={styles.heroTitle}>+₹2000.00/-</Text>
+              {/* 4-Grid Stats Box */}
+              <View style={styles.gridContainer}>
+                {/* Box 1: Yesterday */}
+                <View style={styles.gridBox}>
+                  <Text style={styles.gridLabel}>Commissions Yesterday</Text>
+                  <Text style={styles.gridValue}>+{commsYesterday.toFixed(2)}</Text>
+                </View>
 
-          <View style={styles.heroGrid}>
-            <View style={styles.heroGridItem}>
-              <Text style={styles.heroGridLabel}>Commissions Yesterday</Text>
-              <Text style={styles.heroGridValue}>+158.00</Text>
-            </View>
-            <View style={styles.heroGridItem}>
-              <Text style={styles.heroGridLabel}>Total Team Members</Text>
-              <Text style={styles.heroGridValue}>+11</Text>
-            </View>
-            <View style={styles.heroGridItem}>
-              <Text style={styles.heroGridLabel}>Commissions Today</Text>
-              <Text style={styles.heroGridValue}>+168.00</Text>
-            </View>
-            <View style={styles.heroGridItem}>
-              <Text style={styles.heroGridLabel}>Total Team Deposit</Text>
-              <Text style={styles.heroGridValue}>+148990.00</Text>
-            </View>
-          </View>
-        </LinearGradient>
+                {/* Box 2: Total Members */}
+                <View style={styles.gridBox}>
+                  <Text style={styles.gridLabel}>Total Team Members</Text>
+                  <Text style={styles.gridValue}>+{teamMembers}</Text>
+                </View>
 
-        {/* Invitation Card */}
-        <View style={styles.invitationCard}>
-          <View style={styles.invitationLeft}>
-            <View style={styles.giftIconBox}>
-              <Gift size={20} color="#FF3B30" />
-            </View>
-            <View>
-              <Text style={styles.invitationTitle}>Invitation</Text>
-              <Text style={styles.invitationSubtitle}>Share the Link to Invite</Text>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.shareButton} onPress={handleShare} activeOpacity={0.8}>
-            <Text style={styles.shareButtonText}>{copied ? 'Copied' : 'Share'}</Text>
-          </TouchableOpacity>
-        </View>
+                {/* Box 3: Today */}
+                <View style={styles.gridBox}>
+                  <Text style={styles.gridLabel}>Commissions Today</Text>
+                  <Text style={styles.gridValue}>+{commsToday.toFixed(2)}</Text>
+                </View>
 
-        {/* Half Width & Full Width Cards Section */}
-        <View style={styles.row}>
-          <View style={styles.halfCard}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>New Team Members</Text>
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={styles.levelText}>Level B</Text>
-              <View style={styles.statRow}>
-                <Text style={styles.statLabel}>Today:</Text>
-                <Text style={styles.statValue}>0</Text>
+                {/* Box 4: Total Deposit */}
+                <View style={styles.gridBox}>
+                  <Text style={styles.gridLabel}>Total Team Deposit</Text>
+                  <Text style={styles.gridValue}>+{teamDeposit.toFixed(2)}</Text>
+                </View>
               </View>
-              <View style={styles.statRow}>
-                <Text style={styles.statLabel}>Yesterday:</Text>
-                <Text style={styles.statValue}>0</Text>
+            </LinearGradient>
+
+            {/* 2. Invitation Card */}
+            <View style={styles.invitationCard}>
+              <View style={styles.inviteIconCircle}>
+                <Gift size={22} color="#7C3AED" />
+              </View>
+
+              <View style={styles.inviteTextContainer}>
+                <Text style={styles.inviteTitle}>Invitation</Text>
+                <Text style={styles.inviteSub}>Share the Link to Invite</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.shareButton}
+                onPress={handleShare}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#F59E0B', '#EAB308']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.shareGradient}
+                >
+                  <Text style={styles.shareText}>Share</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            {/* 3. New Team Members Card */}
+            <View style={styles.contentCard}>
+              <Text style={styles.cardSectionTitle}>New Team Members</Text>
+              <Text style={styles.levelBadgeText}>{currentLevel}</Text>
+
+              <View style={styles.statLineRow}>
+                <Text style={styles.statLineLabel}>Today:</Text>
+                <Text style={styles.statLineValue}>{newMembersToday}</Text>
+              </View>
+
+              <View style={styles.statLineRow}>
+                <Text style={styles.statLineLabel}>Yesterday:</Text>
+                <Text style={styles.statLineValue}>{newMembersYesterday}</Text>
               </View>
             </View>
-          </View>
-          <View style={{ flex: 1, marginLeft: 16 }} />
-        </View>
 
-        <View style={styles.fullCard}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Commissions/Deposit</Text>
-          </View>
-          <View style={[styles.cardContent, styles.fullCardContent]}>
-            <View>
-              <Text style={styles.levelText}>Level B</Text>
-              <Text style={styles.fullCardValue}>2900.00/50000.00</Text>
+            {/* 4. Commissions/Deposit Card */}
+            <View style={styles.contentCard}>
+              <Text style={styles.cardSectionTitle}>Commissions/Deposit</Text>
+              <Text style={styles.levelBadgeText}>{currentLevel}</Text>
+
+              <View style={styles.volumeRow}>
+                <Text style={styles.volumeText}>
+                  {currentVol.toFixed(2)}/{targetVol.toFixed(2)}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowDetailsModal(true)}
+                  style={styles.viewDetailsBtn}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.viewDetailsText}>View Details →</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Progress Bar */}
+              <View style={styles.progressTrack}>
+                <LinearGradient
+                  colors={['#8B5CF6', '#7C3AED']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.progressFill, { width: `${Math.max(progressPct, 6)}%` }]}
+                />
+              </View>
             </View>
-            <TouchableOpacity>
-              <Text style={styles.viewDetailsText}>View Details →</Text>
+          </>
+        )}
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      {/* View Details Modal */}
+      <Modal visible={showDetailsModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Award size={20} color="#7C3AED" />
+                <Text style={styles.modalTitle}>Commission Structure</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowDetailsModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalDesc}>
+              Earn automatic perpetual commissions whenever members in your network deposit or trade.
+            </Text>
+
+            <View style={styles.tierBreakdown}>
+              <View style={styles.tierItem}>
+                <View style={styles.tierDot} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tierName}>Level A (Direct Referrals)</Text>
+                  <Text style={styles.tierDetail}>Earn 20% on all deposit volumes</Text>
+                </View>
+                <Text style={styles.tierRate}>20%</Text>
+              </View>
+
+              <View style={styles.tierItem}>
+                <View style={[styles.tierDot, { backgroundColor: '#F59E0B' }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tierName}>Level B (Sub-Referrals)</Text>
+                  <Text style={styles.tierDetail}>Earn 10% on secondary team trades</Text>
+                </View>
+                <Text style={styles.tierRate}>10%</Text>
+              </View>
+
+              <View style={styles.tierItem}>
+                <View style={[styles.tierDot, { backgroundColor: '#10B981' }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tierName}>Level C (Extended Network)</Text>
+                  <Text style={styles.tierDetail}>Earn 5% on 3rd tier community</Text>
+                </View>
+                <Text style={styles.tierRate}>5%</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setShowDetailsModal(false)}
+            >
+              <Text style={styles.modalCloseBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
-
-      </ScrollView>
+      </Modal>
     </View>
   );
 }
@@ -156,186 +290,291 @@ export default function TeamsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: DARK_BG,
+    backgroundColor: '#F4F6FC',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 14,
   },
-  backButton: {
-    padding: 8,
-    marginLeft: -8,
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   headerTitle: {
-    fontSize: 18,
-    color: '#FFFFFF',
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
-  container: {
+  scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 40,
+    paddingTop: 4,
   },
   heroCard: {
     borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 20,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 8,
   },
-  heroSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.9)',
-    fontWeight: '500',
-    marginBottom: 8,
+  heroSub: {
+    color: '#DDD6FE',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 4,
   },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '700',
+  heroAmount: {
     color: '#FFFFFF',
-    marginBottom: 24,
+    fontSize: 32,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: -0.5,
+    marginBottom: 18,
   },
-  heroGrid: {
+  gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    width: '100%',
-    gap: 12,
+    gap: 10,
   },
-  heroGridItem: {
+  gridBox: {
     width: '48%',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
-  heroGridLabel: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.7)',
-    marginBottom: 6,
+  gridLabel: {
+    color: '#CBD5E1',
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  gridValue: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
     textAlign: 'center',
   },
-  heroGridValue: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
   invitationCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 16,
-    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  invitationLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  giftIconBox: {
-    width: 40,
-    height: 40,
-    backgroundColor: 'rgba(255, 59, 48, 0.1)',
-    borderRadius: 10,
+  inviteIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  invitationTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 2,
+  inviteTextContainer: {
+    flex: 1,
   },
-  invitationSubtitle: {
-    color: TEXT_MUTED,
+  inviteTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  inviteSub: {
     fontSize: 12,
+    color: '#64748B',
+    marginTop: 1,
   },
   shareButton: {
-    backgroundColor: '#0A84FF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  shareButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  row: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  halfCard: {
-    flex: 1,
-    backgroundColor: CARD_BG,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
     overflow: 'hidden',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
-  fullCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 16,
+  shareGradient: {
+    paddingVertical: 9,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareText: {
+    color: '#0F172A',
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  contentCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-    overflow: 'hidden',
-    marginBottom: 16,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  cardHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-    backgroundColor: CARD_BG_LIGHT,
-  },
-  cardTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  cardContent: {
-    padding: 16,
-  },
-  levelText: {
-    color: YELLOW_TEXT,
-    fontSize: 18,
+  cardSectionTitle: {
+    fontSize: 15,
     fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  levelBadgeText: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#D97706',
     marginBottom: 12,
   },
-  statRow: {
+  statLineRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'center',
+    paddingVertical: 5,
   },
-  statLabel: {
-    color: TEXT_MUTED,
-    fontSize: 14,
-  },
-  statValue: {
-    color: '#FFFFFF',
-    fontSize: 14,
-  },
-  fullCardContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  fullCardValue: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  statLineLabel: {
+    fontSize: 13.5,
+    color: '#64748B',
     fontWeight: '500',
+  },
+  statLineValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  volumeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  volumeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  viewDetailsBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 4,
   },
   viewDetailsText: {
-    color: '#0A84FF',
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  progressTrack: {
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  modalDesc: {
+    fontSize: 12.5,
+    color: '#64748B',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  tierBreakdown: {
+    gap: 12,
+    marginBottom: 20,
+  },
+  tierItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
+  },
+  tierDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#7C3AED',
+  },
+  tierName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  tierDetail: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  tierRate: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
+  modalCloseBtn: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalCloseBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

@@ -1,266 +1,561 @@
-import React from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, SafeAreaView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  Platform,
+  Share,
+  ActivityIndicator,
+  Modal,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  Wallet, 
-  ArrowRightLeft, 
-  ArrowDownToLine, 
-  Receipt, 
-  Clock, 
-  ListOrdered, 
-  Percent, 
-  TrendingUp 
+import {
+  Gift,
+  Share2,
+  Copy,
+  Check,
+  ChevronRight,
+  Sparkles,
+  Users,
+  Award,
+  ArrowRight,
+  TrendingUp,
+  X,
+  Info,
 } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
+import { useAuth } from '../../context/AuthContext';
+import { getTeamStats, TeamStats } from '../../services';
 
-const DARK_BG = '#050505';
-const CARD_BG = '#111111';
-const CARD_BG_LIGHT = 'rgba(255,255,255,0.03)';
-const TEXT_MUTED = '#8B93A5';
-const MINT = '#00D09C';
+export default function TeamsTabScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(insets.top, Platform.OS === 'android' ? 36 : 20) + 10;
+  const { user } = useAuth();
 
-export default function StatsScreen() {
-  const currentDate = new Date().toLocaleDateString('en-GB'); // gets dd/mm/yyyy
+  const [stats, setStats] = useState<TeamStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+
+  useEffect(() => {
+    getTeamStats(user)
+      .then((data) => setStats(data))
+      .catch((err) => console.warn('Failed to load team stats:', err))
+      .finally(() => setIsLoading(false));
+  }, [user]);
+
+  const inviteLink = stats?.inviteLink || `https://payu.trade/invite?code=VIP2026`;
+
+  const handleShare = async () => {
+    try {
+      await Clipboard.setStringAsync(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Ignore
+    }
+
+    try {
+      await Share.share({
+        title: 'Join My Team on PayU',
+        message: `Join my team on PayU and start earning daily commissions! Invitation Link: ${inviteLink}`,
+        url: inviteLink,
+      });
+    } catch (err) {
+      console.warn('Share error:', err);
+    }
+  };
+
+  const totalCommissions = stats?.totalCommissions ?? 0;
+  const commsYesterday = stats?.commissionsYesterday ?? 0;
+  const commsToday = stats?.commissionsToday ?? 0;
+  const teamMembers = stats?.totalTeamMembers ?? 0;
+  const teamDeposit = stats?.totalTeamDeposit ?? 0;
+  const newMembersToday = stats?.newMembersToday ?? 0;
+  const newMembersYesterday = stats?.newMembersYesterday ?? 0;
+  const currentVol = stats?.currentCommissionVolume ?? 0;
+  const targetVol = stats?.targetCommissionVolume ?? 50000;
+  const currentLevel = stats?.currentLevel ?? 'Level A';
+  const progressPct = targetVol > 0 ? Math.min(Math.round((currentVol / targetVol) * 100), 100) : 0;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.pageTitle}>Statistics</Text>
+    <View style={styles.safeArea}>
+      <StatusBar style="dark" />
 
-        {/* Statistics Section */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.accentBar} />
-            <Text style={styles.sectionTitle}>Statistics <Text style={styles.dateText}>({currentDate})</Text></Text>
-          </View>
-          
-          <View style={styles.grid}>
-            <StatCard 
-              icon={<Wallet size={20} color={MINT} />} 
-              label="Balance" 
-              value="₹ 77.00" 
-            />
-            <StatCard 
-              icon={<ArrowRightLeft size={20} color={MINT} />} 
-              label="Sell" 
-              value="₹ 0.00" 
-            />
-            <StatCard 
-              icon={<ArrowDownToLine size={20} color={MINT} />} 
-              label="Deposit" 
-              value="₹ 0.00" 
-            />
-            <StatCard 
-              icon={<Receipt size={20} color={MINT} />} 
-              label="Commission" 
-              value="₹ 0.00" 
-            />
-          </View>
-        </View>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: topPadding }]}>
+        <Text style={styles.headerTitle}>Teams</Text>
+      </View>
 
-        {/* Payment Section */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.accentBar} />
-            <Text style={styles.sectionTitle}>Payment</Text>
-          </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {isLoading ? (
+          <ActivityIndicator color="#7C3AED" style={{ marginVertical: 40 }} />
+        ) : (
+          <>
+            {/* 1. Hero Card (Sunburst & Purple Gradient) */}
+            <LinearGradient
+              colors={['#8B5CF6', '#7C3AED', '#6D28D9', '#4C1D95']}
+              locations={[0, 0.35, 0.72, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.heroCard}
+            >
+              <Text style={styles.heroSub}>My Total Commissions</Text>
+              <Text style={styles.heroAmount}>
+                +₹{totalCommissions.toLocaleString('en-IN', { minimumFractionDigits: 2 })}/-
+              </Text>
 
-          <View style={styles.exchangeRateBanner}>
-            <Text style={styles.exchangeRateText}>Real Time Exchange Rates(INR/USDT)</Text>
-            <Text style={styles.exchangeRateValue}>110</Text>
-          </View>
+              {/* 4-Grid Stats Box */}
+              <View style={styles.gridContainer}>
+                {/* Box 1: Yesterday */}
+                <View style={styles.gridBox}>
+                  <Text style={styles.gridLabel}>Commissions Yesterday</Text>
+                  <Text style={styles.gridValue}>+{commsYesterday.toFixed(2)}</Text>
+                </View>
 
-          <View style={styles.grid}>
-            <StatCard 
-              icon={<Clock size={16} color={MINT} />} 
-              label="In Process Amount" 
-              value="₹ 0.00" 
-              smallIcon
-            />
-            <StatCard 
-              icon={<ListOrdered size={16} color={MINT} />} 
-              label="In Process Orders" 
-              value="0" 
-              smallIcon
-            />
-            <StatCard 
-              icon={<Percent size={16} color={MINT} />} 
-              label="Commission Rate" 
-              value="3.00 %" 
-              smallIcon
-            />
-            <StatCard 
-              icon={<TrendingUp size={16} color={MINT} />} 
-              label="Estimated Income" 
-              value="₹ 0.00" 
-              smallIcon
-            />
-          </View>
-        </View>
+                {/* Box 2: Total Members */}
+                <View style={styles.gridBox}>
+                  <Text style={styles.gridLabel}>Total Team Members</Text>
+                  <Text style={styles.gridValue}>+{teamMembers}</Text>
+                </View>
 
-        {/* Action Button */}
-        <TouchableOpacity activeOpacity={0.8} style={styles.actionButtonWrapper}>
-          <LinearGradient
-            colors={['#00E5AE', '#00D09C', '#00A67D']}
-            style={styles.actionButton}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-          >
-            <Text style={styles.actionButtonText}>Closed Selling</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+                {/* Box 3: Today */}
+                <View style={styles.gridBox}>
+                  <Text style={styles.gridLabel}>Commissions Today</Text>
+                  <Text style={styles.gridValue}>+{commsToday.toFixed(2)}</Text>
+                </View>
 
+                {/* Box 4: Total Deposit */}
+                <View style={styles.gridBox}>
+                  <Text style={styles.gridLabel}>Total Team Deposit</Text>
+                  <Text style={styles.gridValue}>+{teamDeposit.toFixed(2)}</Text>
+                </View>
+              </View>
+            </LinearGradient>
+
+            {/* 2. Invitation Card */}
+            <View style={styles.invitationCard}>
+              <View style={styles.inviteIconCircle}>
+                <Gift size={22} color="#7C3AED" />
+              </View>
+
+              <View style={styles.inviteTextContainer}>
+                <Text style={styles.inviteTitle}>Invitation</Text>
+                <Text style={styles.inviteSub}>Share the Link to Invite</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.shareButton}
+                onPress={handleShare}
+                activeOpacity={0.85}
+              >
+                <LinearGradient
+                  colors={['#F59E0B', '#EAB308']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.shareGradient}
+                >
+                  <Text style={styles.shareText}>Share</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+
+            {/* 3. New Team Members Card */}
+            <View style={styles.contentCard}>
+              <Text style={styles.cardSectionTitle}>New Team Members</Text>
+              <Text style={styles.levelBadgeText}>{currentLevel}</Text>
+
+              <View style={styles.statLineRow}>
+                <Text style={styles.statLineLabel}>Today:</Text>
+                <Text style={styles.statLineValue}>{newMembersToday}</Text>
+              </View>
+
+              <View style={styles.statLineRow}>
+                <Text style={styles.statLineLabel}>Yesterday:</Text>
+                <Text style={styles.statLineValue}>{newMembersYesterday}</Text>
+              </View>
+            </View>
+
+            {/* 4. Commissions/Deposit Card */}
+            <View style={styles.contentCard}>
+              <Text style={styles.cardSectionTitle}>Commissions/Deposit</Text>
+              <Text style={styles.levelBadgeText}>{currentLevel}</Text>
+
+              <View style={styles.volumeRow}>
+                <Text style={styles.volumeText}>
+                  {currentVol.toFixed(2)}/{targetVol.toFixed(2)}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setShowDetailsModal(true)}
+                  style={styles.viewDetailsBtn}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.viewDetailsText}>View Details →</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Progress Bar */}
+              <View style={styles.progressTrack}>
+                <LinearGradient
+                  colors={['#8B5CF6', '#7C3AED']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.progressFill, { width: `${Math.max(progressPct, 6)}%` }]}
+                />
+              </View>
+            </View>
+          </>
+        )}
+
+        <View style={{ height: 110 }} />
       </ScrollView>
-    </SafeAreaView>
+
+      {/* View Details Modal */}
+      <Modal visible={showDetailsModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Award size={20} color="#7C3AED" />
+                <Text style={styles.modalTitle}>Commission Structure</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowDetailsModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalDesc}>
+              Earn automatic perpetual commissions whenever members in your network deposit or trade.
+            </Text>
+
+            <View style={styles.tierBreakdown}>
+              <View style={styles.tierItem}>
+                <View style={styles.tierDot} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tierName}>Level A (Direct Referrals)</Text>
+                  <Text style={styles.tierDetail}>Earn 20% on all deposit volumes</Text>
+                </View>
+                <Text style={styles.tierRate}>20%</Text>
+              </View>
+
+              <View style={styles.tierItem}>
+                <View style={[styles.tierDot, { backgroundColor: '#F59E0B' }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tierName}>Level B (Sub-Referrals)</Text>
+                  <Text style={styles.tierDetail}>Earn 10% on secondary team trades</Text>
+                </View>
+                <Text style={styles.tierRate}>10%</Text>
+              </View>
+
+              <View style={styles.tierItem}>
+                <View style={[styles.tierDot, { backgroundColor: '#10B981' }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tierName}>Level C (Extended Network)</Text>
+                  <Text style={styles.tierDetail}>Earn 5% on 3rd tier community</Text>
+                </View>
+                <Text style={styles.tierRate}>5%</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.modalCloseBtn}
+              onPress={() => setShowDetailsModal(false)}
+            >
+              <Text style={styles.modalCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
-
-// Sub-component for the grid items
-const StatCard = ({ icon, label, value, smallIcon = false }: { icon: React.ReactNode, label: string, value: string, smallIcon?: boolean }) => (
-  <View style={styles.statCard}>
-    <View style={styles.statCardHeader}>
-      <View style={[styles.iconBox, smallIcon && styles.iconBoxSmall]}>
-        {icon}
-      </View>
-      <Text style={styles.statLabel} numberOfLines={1}>{label}</Text>
-    </View>
-    <Text style={styles.statValue}>{value}</Text>
-  </View>
-);
 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: DARK_BG,
+    backgroundColor: '#F4F6FC',
   },
-  container: {
-    paddingHorizontal: 16, // slightly reduced for small screens
-    paddingTop: 30,
-    paddingBottom: 100,
-  },
-  pageTitle: {
-    fontSize: 28, // reduced from 32
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 20,
-    letterSpacing: 0.5,
-  },
-  sectionCard: {
-    backgroundColor: CARD_BG,
-    borderRadius: 20,
-    padding: 16, // reduced from 20
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
+  header: {
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+  },
+  heroCard: {
+    borderRadius: 24,
+    padding: 20,
     marginBottom: 16,
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
+    elevation: 8,
   },
-  accentBar: {
-    width: 4,
-    height: 16,
-    backgroundColor: MINT,
-    borderRadius: 2,
-    marginRight: 8,
-  },
-  sectionTitle: {
-    fontSize: 16, // reduced from 18
+  heroSub: {
+    color: '#DDD6FE',
+    fontSize: 13,
     fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  heroAmount: {
     color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: -0.5,
+    marginBottom: 18,
   },
-  dateText: {
-    fontSize: 13, // reduced from 14
-    color: TEXT_MUTED,
-    fontWeight: '400',
-  },
-  grid: {
+  gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    // Removed gap to prevent overflow on small screens
+    gap: 10,
   },
-  statCard: {
-    width: '48%', // 48% leaves exactly 4% for the space between, handled by space-between
-    backgroundColor: CARD_BG_LIGHT,
+  gridBox: {
+    width: '48%',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     borderRadius: 14,
-    padding: 14, // slightly reduced
-    marginBottom: 12, // added vertical spacing since gap is removed
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.02)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
-  statCardHeader: {
+  gridLabel: {
+    color: '#CBD5E1',
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  gridValue: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  invitationCard: {
     flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  inviteIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  inviteTextContainer: {
+    flex: 1,
+  },
+  inviteTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  inviteSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  shareButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  shareGradient: {
+    paddingVertical: 9,
+    paddingHorizontal: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  shareText: {
+    color: '#0F172A',
+    fontSize: 13.5,
+    fontWeight: '800',
+  },
+  contentCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cardSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  levelBadgeText: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#D97706', // Golden amber like screenshot
+    marginBottom: 12,
+  },
+  statLineRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 5,
+  },
+  statLineLabel: {
+    fontSize: 13.5,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  statLineValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  volumeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
   },
-  iconBox: {
-    width: 28, // reduced from 32
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: 'rgba(0, 208, 156, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
+  volumeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
   },
-  iconBoxSmall: {
-    width: 20, // reduced from 24
-    height: 20,
-    borderRadius: 6,
-    backgroundColor: 'transparent',
-    marginRight: 6,
+  viewDetailsBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 4,
   },
-  statLabel: {
-    color: TEXT_MUTED,
-    fontSize: 11, // reduced from 12
-    fontWeight: '500',
+  viewDetailsText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#7C3AED',
+  },
+  progressTrack: {
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  modalBackdrop: {
     flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  statValue: {
-    color: '#FFFFFF',
-    fontSize: 16, // reduced from 18
-    fontWeight: '600',
+  modalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    padding: 20,
   },
-  exchangeRateBanner: {
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 208, 156, 0.08)',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  modalDesc: {
+    fontSize: 12.5,
+    color: '#64748B',
+    lineHeight: 18,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 208, 156, 0.15)',
   },
-  exchangeRateText: {
-    color: MINT,
-    fontSize: 11, // reduced from 13 to prevent wrapping on small screens
-    fontWeight: '500',
-    flex: 1,
-    marginRight: 8,
+  tierBreakdown: {
+    gap: 12,
+    marginBottom: 20,
   },
-  exchangeRateValue: {
-    color: MINT,
-    fontSize: 14, // reduced from 16
-    fontWeight: '700',
-  },
-  actionButtonWrapper: {
-    marginTop: 8,
-    borderRadius: 14,
-    boxShadow: '0px 4px 10px rgba(0, 208, 156, 0.1)',
-    elevation: 4,
-  },
-  actionButton: {
-    paddingVertical: 16,
-    borderRadius: 14,
+  tierItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    gap: 10,
   },
-  actionButtonText: {
-    color: '#000000',
-    fontSize: 15,
+  tierDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#7C3AED',
+  },
+  tierName: {
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    color: '#0F172A',
+  },
+  tierDetail: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  tierRate: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#7C3AED',
+  },
+  modalCloseBtn: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  modalCloseBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

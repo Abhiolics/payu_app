@@ -1,321 +1,992 @@
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Dimensions, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  Platform,
+  Modal,
+  TextInput,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Colors } from '../../constants/Colors';
 import { LinearGradient } from 'expo-linear-gradient';
-import { 
-  User, 
-  Ticket, 
-  Wallet, 
-  CreditCard, 
-  XCircle, 
-  Headphones, 
-  MessageSquare, 
-  Shield 
+import {
+  User,
+  CreditCard,
+  Gift,
+  Bell,
+  ClipboardList,
+  Headphones,
+  Copy,
+  Check,
+  X,
+  Wallet,
+  Banknote,
+  LogOut,
+  ChevronRight,
+  ShieldCheck,
+  Award,
 } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
+import { useAuth } from '../../context/AuthContext';
+import {
+  redeemGiftCode,
+  getDeposits,
+  getWithdrawals,
+  DepositItem,
+  WithdrawalItem,
+} from '../../services';
 
-const { width } = Dimensions.get('window');
-
-const MINT_GRADIENT = ['#00E5AE', '#00D09C', '#00A67D'] as const;
-const DARK_BG = '#050505';
-const CARD_BG = '#111111';
-const ICON_BG = '#1E1B24';
-const TEXT_MUTED = '#8B93A5';
-
-export default function ProfileScreen() {
+export default function MyAssetScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? 36 : 20) + 12;
+  const { user, wallet, logoutUser, updateUserProfile, refreshWallet, refreshUserData } = useAuth();
+
+  const [copiedId, setCopiedId] = useState(false);
+  const [totalDeposit, setTotalDeposit] = useState<number>(0);
+  const [totalWithdraw, setTotalWithdraw] = useState<number>(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Modals State
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [showGiftModal, setShowGiftModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  // Edit Profile form state
+  const [editName, setEditName] = useState(user?.fullName || '');
+  const [editPhone, setEditPhone] = useState(user?.phoneNumber || '');
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+
+  // Gift Code state
+  const [giftCode, setGiftCode] = useState('');
+  const [isRedeeming, setIsRedeeming] = useState(false);
+  const [giftResult, setGiftResult] = useState<{ text: string; isError: boolean } | null>(null);
+
+  const balance = wallet?.balance ?? 0;
+  const userId = user?._id ? user._id.slice(-8).toUpperCase() : user?.id ? String(user.id).slice(-8).toUpperCase() : 'USER';
+
+  const loadTotals = async () => {
+    try {
+      const [depRes, withRes] = await Promise.allSettled([getDeposits(), getWithdrawals()]);
+
+      if (depRes.status === 'fulfilled' && Array.isArray(depRes.value) && depRes.value.length > 0) {
+        const sum = depRes.value
+          .filter((d: DepositItem) => d.status === 'approved')
+          .reduce((acc: number, d: DepositItem) => acc + (d.amount || 0), 0);
+        setTotalDeposit(sum);
+      }
+
+      if (withRes.status === 'fulfilled' && Array.isArray(withRes.value) && withRes.value.length > 0) {
+        const sum = withRes.value
+          .filter((w: WithdrawalItem) => w.status === 'approved')
+          .reduce((acc: number, w: WithdrawalItem) => acc + (w.amount || 0), 0);
+        setTotalWithdraw(sum);
+      }
+    } catch {
+      // Fallback
+    }
+  };
+
+  useEffect(() => {
+    loadTotals();
+  }, []);
+
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([refreshUserData(), refreshWallet(), loadTotals()]);
+    setIsRefreshing(false);
+  };
+
+  const handleCopyId = async () => {
+    try {
+      await Clipboard.setStringAsync(userId);
+      setCopiedId(true);
+      setTimeout(() => setCopiedId(false), 2000);
+    } catch {
+      // Ignore
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!editName.trim()) {
+      setUpdateError('Please enter your full name.');
+      return;
+    }
+    setIsUpdating(true);
+    setUpdateError(null);
+
+    try {
+      await updateUserProfile({
+        fullName: editName.trim(),
+        phoneNumber: editPhone.trim(),
+      });
+      setIsUpdating(false);
+      setShowProfileModal(false);
+    } catch (err: any) {
+      setIsUpdating(false);
+      setUpdateError(err.message || 'Failed to update profile.');
+    }
+  };
+
+  const handleRedeemGift = async () => {
+    if (!giftCode.trim()) return;
+    setIsRedeeming(true);
+    setGiftResult(null);
+
+    try {
+      const res = await redeemGiftCode(giftCode.trim());
+      setGiftResult({
+        text: res.message || 'Gift code redeemed successfully!',
+        isError: false,
+      });
+      setGiftCode('');
+      await refreshWallet();
+    } catch (err: any) {
+      setGiftResult({
+        text: err.message || 'Invalid or expired gift code.',
+        isError: true,
+      });
+    } finally {
+      setIsRedeeming(false);
+    }
+  };
+
+  const handleConfirmLogout = async () => {
+    setShowLogoutModal(false);
+    await logoutUser();
+    router.replace('/login');
+  };
+
+  // 6 Menu options definition
+  const menuOptions = [
+    {
+      id: 'profile',
+      label: 'Profile',
+      sublabel: 'Personal details & credentials',
+      icon: User,
+      onPress: () => {
+        setEditName(user?.fullName || '');
+        setEditPhone(user?.phoneNumber || '');
+        setShowProfileModal(true);
+      },
+    },
+    {
+      id: 'account',
+      label: 'Account',
+      sublabel: 'Linked bank & withdrawal details',
+      icon: CreditCard,
+      onPress: () => router.push('/account'),
+    },
+    {
+      id: 'gift',
+      label: 'Gift Code',
+      sublabel: 'Claim voucher bonus credits',
+      icon: Gift,
+      onPress: () => router.push('/gift-rewards'),
+    },
+    {
+      id: 'notification',
+      label: 'Notification',
+      sublabel: 'Platform messages & alerts',
+      icon: Bell,
+      onPress: () => router.push('/messages'),
+    },
+    {
+      id: 'plan',
+      label: 'Plan',
+      sublabel: 'VIP memberships & daily cashback',
+      icon: ClipboardList,
+      onPress: () => router.push('/(tabs)/card'),
+    },
+    {
+      id: 'service',
+      label: 'Service',
+      sublabel: '24/7 dedicated customer care',
+      icon: Headphones,
+      onPress: () => router.push('/service'),
+    },
+  ];
 
   return (
     <View style={styles.safeArea}>
-      <StatusBar style="light" />
-      <ScrollView 
-        contentContainerStyle={[styles.container, { paddingTop: topPadding }]} 
+      <StatusBar style="dark" />
+
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, { paddingTop: topPadding }]}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#7C3AED" />
+        }
       >
-        
-        {/* Avatar Section */}
-        <View style={styles.avatarContainer}>
-          <LinearGradient
-            colors={MINT_GRADIENT}
-            style={styles.avatarBorder}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
+        {/* Top Header: Avatar & My Asset Title in Purple Theme */}
+        <View style={styles.topHeader}>
+          {/* Avatar with purple brand border */}
+          <View style={styles.avatarBorder}>
             <View style={styles.avatarInner}>
-              <User size={32} color="#00D09C" strokeWidth={1.5} />
+              <User size={30} color="#7C3AED" />
             </View>
-          </LinearGradient>
-          <Text style={styles.titleText}>My Asset</Text>
-        </View>
+          </View>
 
-        {/* Commission Card */}
-        <TouchableOpacity activeOpacity={0.8} style={styles.cardWrapper}>
-          <LinearGradient
-            colors={['rgba(0, 208, 156,0.5)', 'rgba(0, 208, 156,0.05)', 'rgba(0, 208, 156,0.2)']}
-            style={styles.cardGradientBorder}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+          {/* Title */}
+          <Text style={styles.myAssetTitle}>My Asset</Text>
+
+          {/* User ID Pill */}
+          <TouchableOpacity
+            style={styles.userIdPill}
+            onPress={handleCopyId}
+            activeOpacity={0.7}
           >
-            <View style={[styles.card, styles.rowCard]}>
-              <View style={styles.iconBox}>
-                <Ticket size={24} color="#00D09C" strokeWidth={1.5} />
-              </View>
-              <View style={styles.cardTextContent}>
-                <Text style={styles.cardLabel}>Commission</Text>
-                <Text style={styles.cardValue}>₹ 0</Text>
-              </View>
-            </View>
-          </LinearGradient>
-        </TouchableOpacity>
-
-        {/* Deposit & Withdraw Row */}
-        <View style={styles.row}>
-          <TouchableOpacity activeOpacity={0.8} style={[styles.cardWrapper, { flex: 1, marginRight: 8 }]}>
-            <LinearGradient
-              colors={['rgba(0, 208, 156,0.4)', 'rgba(0, 208, 156,0.05)', 'rgba(0, 208, 156,0.1)']}
-              style={styles.cardGradientBorder}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <View style={[styles.card, styles.rowCard]}>
-                <View style={styles.iconBox}>
-                  <Wallet size={24} color="#00D09C" strokeWidth={1.5} />
-                </View>
-                <View style={styles.cardTextContent}>
-                  <Text style={styles.cardLabel}>Deposit</Text>
-                  <Text style={styles.cardValue}>₹ 0</Text>
-                </View>
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-
-          <TouchableOpacity activeOpacity={0.8} style={[styles.cardWrapper, { flex: 1, marginLeft: 8 }]}>
-            <LinearGradient
-              colors={['rgba(0, 208, 156,0.1)', 'rgba(0, 208, 156,0.05)', 'rgba(0, 208, 156,0.4)']}
-              style={styles.cardGradientBorder}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <View style={[styles.card, styles.rowCard]}>
-                <View style={styles.iconBox}>
-                  <Wallet size={24} color="#00D09C" strokeWidth={1.5} />
-                </View>
-                <View style={styles.cardTextContent}>
-                  <Text style={styles.cardLabel}>Withdraw</Text>
-                  <Text style={styles.cardValue}>₹ 0</Text>
-                </View>
-              </View>
-            </LinearGradient>
+            <Text style={styles.userIdText}>ID: {userId}</Text>
+            {copiedId ? (
+              <Check size={12} color="#10B981" style={{ marginLeft: 4 }} />
+            ) : (
+              <Copy size={12} color="#94A3B8" style={{ marginLeft: 4 }} />
+            )}
           </TouchableOpacity>
         </View>
 
-        {/* Main Actions Grid */}
-        <View style={[styles.cardWrapper, styles.gridWrapper]}>
-          <LinearGradient
-            colors={['rgba(0, 208, 156,0.4)', 'rgba(0, 208, 156,0.02)', 'rgba(0, 208, 156,0.2)']}
-            style={styles.cardGradientBorder}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0.8, y: 1 }}
-          >
-            <View style={[styles.card, styles.gridCard]}>
-              <View style={styles.gridRow}>
-                <GridItem 
-                  icon={<CreditCard size={24} color="#00D09C" strokeWidth={1.5} />} 
-                  label="Wallet" 
-                  onPress={() => router.push('/(tabs)')} 
-                />
-                <GridItem 
-                  icon={<XCircle size={24} color="#00D09C" strokeWidth={1.5} />} 
-                  label="Integral" 
-                />
-                <GridItem 
-                  icon={<Headphones size={24} color="#00D09C" strokeWidth={1.5} />} 
-                  label="Service" 
-                  onPress={() => router.push('/service')} 
-                />
-              </View>
-              <View style={styles.gridRow}>
-                <GridItem 
-                  icon={<MessageSquare size={24} color="#00D09C" strokeWidth={1.5} />} 
-                  label="Message" 
-                  onPress={() => router.push('/messages')}
-                />
-                <GridItem icon={<Shield size={24} color="#00D09C" strokeWidth={1.5} />} label="Pin" />
-                <View style={styles.gridItemPlaceholder} />
-              </View>
-              <Text style={styles.versionText}>v1.1.8</Text>
-            </View>
-          </LinearGradient>
+        {/* 1. Full-Width Assets Card */}
+        <View style={styles.assetCard}>
+          <View style={styles.assetSquircle}>
+            <Banknote size={22} color="#7C3AED" />
+          </View>
+          <View style={styles.assetTextGroup}>
+            <Text style={styles.assetLabel}>Assets</Text>
+            <Text style={styles.assetValue}>
+              ₹{balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            </Text>
+          </View>
         </View>
 
-        {/* Logout Button */}
-        <TouchableOpacity 
-          activeOpacity={0.8} 
-          style={styles.logoutWrapper}
-          onPress={() => router.replace('/login')}
+        {/* 2. Row of 2 Cards: Deposit & Withdraw */}
+        <View style={styles.dualCardRow}>
+          {/* Deposit Card */}
+          <TouchableOpacity
+            style={styles.statCard}
+            onPress={() => router.push('/deposit')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.statSquircle}>
+              <Wallet size={20} color="#7C3AED" />
+            </View>
+            <View style={styles.statTextGroup}>
+              <Text style={styles.statLabel}>Deposit</Text>
+              <Text style={styles.statValue}>₹{totalDeposit.toLocaleString('en-IN')}</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Withdraw Card */}
+          <TouchableOpacity
+            style={styles.statCard}
+            onPress={() => router.push('/withdraw')}
+            activeOpacity={0.85}
+          >
+            <View style={styles.statSquircle}>
+              <Wallet size={20} color="#7C3AED" />
+            </View>
+            <View style={styles.statTextGroup}>
+              <Text style={styles.statLabel}>Withdraw</Text>
+              <Text style={styles.statValue}>₹{totalWithdraw.toLocaleString('en-IN')}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        {/* 3. Feature Actions Card: ALL SIX OPTIONS IN ROWS */}
+        <View style={styles.optionsListCard}>
+          {menuOptions.map((item, index) => {
+            const IconComp = item.icon;
+            const isLast = index === menuOptions.length - 1;
+
+            return (
+              <React.Fragment key={item.id}>
+                <TouchableOpacity
+                  style={styles.optionRow}
+                  onPress={item.onPress}
+                  activeOpacity={0.7}
+                >
+                  {/* Left Icon Squircle in Purple */}
+                  <View style={styles.optionIconSquircle}>
+                    <IconComp size={20} color="#7C3AED" />
+                  </View>
+
+                  {/* Middle Text Info */}
+                  <View style={styles.optionTextContainer}>
+                    <Text style={styles.optionLabel}>{item.label}</Text>
+                    <Text style={styles.optionSublabel}>{item.sublabel}</Text>
+                  </View>
+
+                  {/* Right Chevron */}
+                  <ChevronRight size={18} color="#94A3B8" />
+                </TouchableOpacity>
+
+                {/* Divider between rows */}
+                {!isLast && <View style={styles.optionDivider} />}
+              </React.Fragment>
+            );
+          })}
+
+          {/* App Version Tag */}
+          <Text style={styles.versionText}>v1.0.0.1</Text>
+        </View>
+
+        {/* 4. Logout Button in Purple Theme */}
+        <TouchableOpacity
+          style={styles.logoutButtonWrap}
+          onPress={() => setShowLogoutModal(true)}
+          activeOpacity={0.85}
         >
           <LinearGradient
-            colors={MINT_GRADIENT}
-            style={styles.logoutButton}
+            colors={['#8B5CF6', '#7C3AED', '#6D28D9']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
+            style={styles.logoutGradient}
           >
-            <Text style={styles.logoutText}>Logout</Text>
+            <LogOut size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.logoutButtonText}>Logout</Text>
           </LinearGradient>
         </TouchableOpacity>
 
+        <View style={{ height: 110 }} />
       </ScrollView>
+
+      {/* Profile Modal */}
+      <Modal visible={showProfileModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <User size={20} color="#7C3AED" />
+                <Text style={styles.modalTitle}>User Profile</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowProfileModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalFieldGroup}>
+              <Text style={styles.fieldLabel}>Full Name</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Enter full name"
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+
+            <View style={styles.modalFieldGroup}>
+              <Text style={styles.fieldLabel}>Phone Number</Text>
+              <TextInput
+                style={styles.fieldInput}
+                value={editPhone}
+                onChangeText={setEditPhone}
+                placeholder="e.g. +91 9876543210"
+                placeholderTextColor="#94A3B8"
+                keyboardType="phone-pad"
+              />
+            </View>
+
+            <View style={styles.modalFieldGroup}>
+              <Text style={styles.fieldLabel}>Email Address</Text>
+              <Text style={styles.fieldStaticText}>{user?.email || 'N/A'}</Text>
+            </View>
+
+            <View style={styles.modalFieldGroup}>
+              <Text style={styles.fieldLabel}>Current Plan Tier</Text>
+              <Text style={[styles.fieldStaticText, { color: '#7C3AED', fontWeight: '700' }]}>
+                {user?.plan?.name || 'VIP Tier'}
+              </Text>
+            </View>
+
+            {updateError && <Text style={styles.errorText}>{updateError}</Text>}
+
+            <TouchableOpacity
+              style={styles.saveProfileBtn}
+              onPress={handleSaveProfile}
+              disabled={isUpdating}
+              activeOpacity={0.8}
+            >
+              {isUpdating ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.saveProfileBtnText}>Save Changes</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Account / Bank Details Modal */}
+      <Modal visible={showAccountModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <CreditCard size={20} color="#7C3AED" />
+                <Text style={styles.modalTitle}>Settlement Account</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowAccountModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.accountDesc}>
+              Your linked bank account details for instant withdrawals and payout settlements.
+            </Text>
+
+            <View style={styles.accountInfoCard}>
+              <View style={styles.accountRow}>
+                <Text style={styles.accountRowLabel}>Bank Name</Text>
+                <Text style={styles.accountRowVal}>State Bank of India</Text>
+              </View>
+              <View style={styles.accountRow}>
+                <Text style={styles.accountRowLabel}>Account Holder</Text>
+                <Text style={styles.accountRowVal}>{user?.fullName || 'Account Holder'}</Text>
+              </View>
+              <View style={styles.accountRow}>
+                <Text style={styles.accountRowLabel}>Account No.</Text>
+                <Text style={styles.accountRowVal}>•••• •••• 4821</Text>
+              </View>
+              <View style={styles.accountRow}>
+                <Text style={styles.accountRowLabel}>IFSC Code</Text>
+                <Text style={styles.accountRowVal}>SBIN0001245</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={styles.manageWithdrawBtn}
+              onPress={() => {
+                setShowAccountModal(false);
+                router.push('/withdraw');
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.manageWithdrawBtnText}>Manage in Withdraw Screen →</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Gift Code Modal */}
+      <Modal visible={showGiftModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Gift size={20} color="#7C3AED" />
+                <Text style={styles.modalTitle}>Redeem Gift Code</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowGiftModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.accountDesc}>
+              Enter your promotional gift voucher code to claim instant credits to your wallet.
+            </Text>
+
+            <TextInput
+              style={styles.giftInput}
+              placeholder="e.g. BONUS2026"
+              placeholderTextColor="#94A3B8"
+              value={giftCode}
+              onChangeText={setGiftCode}
+              autoCapitalize="characters"
+            />
+
+            {giftResult && (
+              <View
+                style={[
+                  styles.giftAlert,
+                  { backgroundColor: giftResult.isError ? '#FEE2E2' : '#DCFCE7' },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.giftAlertText,
+                    { color: giftResult.isError ? '#DC2626' : '#15803D' },
+                  ]}
+                >
+                  {giftResult.text}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.redeemBtn}
+              onPress={handleRedeemGift}
+              disabled={isRedeeming}
+              activeOpacity={0.8}
+            >
+              {isRedeeming ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={styles.redeemBtnText}>Redeem Code</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Logout Confirmation Modal */}
+      <Modal visible={showLogoutModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <LogOut size={20} color="#EF4444" />
+                <Text style={[styles.modalTitle, { color: '#EF4444' }]}>Log Out</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowLogoutModal(false)}>
+                <X size={20} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.accountDesc}>
+              Are you sure you want to log out of your PayU account? You will need to sign in again to access your assets.
+            </Text>
+
+            <View style={styles.logoutBtnRow}>
+              <TouchableOpacity
+                style={styles.cancelLogoutBtn}
+                onPress={() => setShowLogoutModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.cancelLogoutBtnText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.confirmLogoutBtn}
+                onPress={handleConfirmLogout}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.confirmLogoutBtnText}>Log Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-const GridItem = ({ icon, label, onPress }: { icon: React.ReactNode; label: string; onPress?: () => void }) => (
-  <TouchableOpacity activeOpacity={0.7} style={styles.gridItem} onPress={onPress}>
-    <View style={styles.gridIconBox}>
-      {icon}
-    </View>
-    <Text style={styles.gridLabel}>{label}</Text>
-  </TouchableOpacity>
-);
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: DARK_BG,
+    backgroundColor: '#F8FAFC',
   },
-  container: {
+  scrollContent: {
     paddingHorizontal: 16,
-    paddingBottom: 110,
+    paddingBottom: 24,
   },
-  avatarContainer: {
+
+  // Top Header: Avatar & Title
+  topHeader: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   avatarBorder: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    padding: 2,
-    marginBottom: 12,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2,
+    borderColor: '#7C3AED',
+    padding: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F3FF',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
+    marginBottom: 10,
   },
   avatarInner: {
-    flex: 1,
-    backgroundColor: DARK_BG,
-    borderRadius: 33,
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+    backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  titleText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#00D09C',
-    letterSpacing: 0.5,
+  myAssetTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.3,
   },
-  cardWrapper: {
+  userIdPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    marginTop: 6,
+  },
+  userIdText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+
+  // 1. Assets Full-Width Card
+  assetCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
     marginBottom: 12,
-    borderRadius: 16,
-    boxShadow: '0px 4px 10px rgba(0, 208, 156, 0.05)',
+    borderWidth: 1.5,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  cardGradientBorder: {
-    borderRadius: 16,
-    padding: 1,
-  },
-  card: {
-    backgroundColor: CARD_BG,
-    borderRadius: 15,
-    padding: 16,
-  },
-  rowCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  iconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: ICON_BG,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  cardTextContent: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  cardLabel: {
-    color: TEXT_MUTED,
-    fontSize: 12,
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  cardValue: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  gridWrapper: {
-    marginTop: 4,
-  },
-  gridCard: {
-    padding: 16,
-    paddingBottom: 12,
-  },
-  gridRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
-  gridItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  gridItemPlaceholder: {
-    flex: 1,
-  },
-  gridIconBox: {
+  assetSquircle: {
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: ICON_BG,
+    backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginRight: 14,
   },
-  gridLabel: {
-    color: '#FFF',
-    fontSize: 11,
+  assetTextGroup: {
+    justifyContent: 'center',
+  },
+  assetLabel: {
+    fontSize: 13,
     fontWeight: '500',
+    color: '#64748B',
+    marginBottom: 2,
   },
-  versionText: {
-    color: TEXT_MUTED,
-    fontSize: 11,
-    textAlign: 'right',
-    marginTop: 4,
-    marginRight: 4,
+  assetValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
   },
-  logoutWrapper: {
-    marginTop: 16,
-    borderRadius: 20,
-    boxShadow: '0px 4px 10px rgba(0, 208, 156, 0.2)',
-    elevation: 5,
+
+  // 2. Row of 2 Cards: Deposit & Withdraw
+  dualCardRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
   },
-  logoutButton: {
-    paddingVertical: 14,
-    borderRadius: 20,
+  statCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  statSquircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#EDE9FE',
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 10,
   },
-  logoutText: {
-    color: '#000',
+  statTextGroup: {
+    justifyContent: 'center',
+    flex: 1,
+  },
+  statLabel: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: '#64748B',
+    marginBottom: 2,
+  },
+  statValue: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+
+  // 3. Options List Card (ALL 6 OPTIONS AS ROWS)
+  optionsListCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: '#F1F5F9',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  optionIconSquircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#EDE9FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  optionTextContainer: {
+    flex: 1,
+  },
+  optionLabel: {
     fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  optionSublabel: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  optionDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+    marginLeft: 58,
+  },
+  versionText: {
+    fontSize: 11.5,
+    color: '#94A3B8',
+    textAlign: 'right',
+    paddingTop: 10,
+    paddingBottom: 6,
+    fontWeight: '500',
+  },
+
+  // 4. Logout Button
+  logoutButtonWrap: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  logoutGradient: {
+    flexDirection: 'row',
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 20,
+  },
+  logoutButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Modals
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 380,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  modalFieldGroup: {
+    marginBottom: 12,
+  },
+  fieldLabel: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  fieldInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  fieldStaticText: {
+    fontSize: 14,
+    color: '#0F172A',
+    fontWeight: '600',
+    paddingVertical: 6,
+  },
+  errorText: {
+    fontSize: 12.5,
+    color: '#EF4444',
+    marginBottom: 10,
+  },
+  saveProfileBtn: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  saveProfileBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Account Modal
+  accountDesc: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  accountInfoCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+    marginBottom: 14,
+  },
+  accountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  accountRowLabel: {
+    fontSize: 12.5,
+    color: '#64748B',
+  },
+  accountRowVal: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  manageWithdrawBtn: {
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  manageWithdrawBtnText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: '#475569',
+  },
+
+  // Gift Modal
+  giftInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: '#0F172A',
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  giftAlert: {
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  giftAlertText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  redeemBtn: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  redeemBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Logout Modal
+  logoutBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+  },
+  cancelLogoutBtn: {
+    flex: 1,
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelLogoutBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  confirmLogoutBtn: {
+    flex: 1,
+    backgroundColor: '#EF4444',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  confirmLogoutBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
