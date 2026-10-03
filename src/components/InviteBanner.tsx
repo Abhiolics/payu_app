@@ -11,7 +11,7 @@ export default function InviteBanner() {
   const [copied, setCopied] = useState(false);
 
   const inviteCode = user?._id ? user._id.slice(-6).toUpperCase() : 'VIP2026';
-  const inviteLink = `https://payu.trade/invite?code=${inviteCode}`;
+  const inviteLink = `https://gdpay.trade/invite?code=${inviteCode}`;
 
   const handleInvite = async () => {
     // 1. Copy link to clipboard
@@ -26,8 +26,8 @@ export default function InviteBanner() {
     // 2. Open native share sheet with generated invite link
     try {
       await Share.share({
-        title: 'Join My Team on PayU',
-        message: `Join my team on PayU and start earning daily commissions! Invitation Link: ${inviteLink}`,
+        title: 'Join My Team on GDPay',
+        message: `Join my team on GDPay and start earning daily commissions! Invitation Link: ${inviteLink}`,
         url: inviteLink,
       });
     } catch (err) {

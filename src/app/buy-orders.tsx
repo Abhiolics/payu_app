@@ -106,7 +106,7 @@ export default function BuyOrdersScreen() {
               paymentMethod: d.plan?.name ? `${d.plan.name} Plan` : 'Direct Deposit',
               dateStr: createdAt.toISOString().replace('T', ' ').slice(0, 19),
               daysAgo: Math.max(0, daysAgo),
-              merchant: 'Official PayU Desk',
+              merchant: 'Official GDPay Desk',
               referenceId: d.transactionRef || d._id,
             };
           });

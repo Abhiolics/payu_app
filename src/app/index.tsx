@@ -124,17 +124,17 @@ export default function AppSplashScreen() {
           },
         ]}
       >
-        {/* Sleek 3D Purple Logo */}
+        {/* GDPay Logo */}
         <View style={styles.logoContainer}>
           <Image
-            source={require('../../assets/images/payu-purple-logo.png')}
+            source={require('../../assets/images/icon.png')}
             style={styles.logoImage}
             resizeMode="contain"
           />
         </View>
 
         {/* App Title & Subtitle */}
-        <Text style={styles.appName}>PayU</Text>
+        <Text style={styles.appName}>GDPay</Text>
         <Text style={styles.appTagline}>Fast, Secure Payments</Text>
 
         {/* Minimal Progress Bar */}
@@ -153,7 +153,7 @@ export default function AppSplashScreen() {
       {/* Footer Security Badge */}
       <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
         <Text style={styles.versionText}>
-          v{appSettings?.currentVersion || '1.0.0'} (GDPE Production)
+          v{appSettings?.currentVersion || '1.0.0'} (GDPay Production)
         </Text>
       </Animated.View>
 
@@ -222,16 +222,16 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     marginBottom: 24,
-    shadowColor: '#7C3AED',
+    shadowColor: '#0247FE',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 18,
     elevation: 8,
   },
   logoImage: {
     width: 96,
     height: 96,
-    borderRadius: 48,
+    borderRadius: 22,
   },
   appName: {
     fontSize: 36,

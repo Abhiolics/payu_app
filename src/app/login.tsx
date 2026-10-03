@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Animated,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -231,7 +232,7 @@ export default function LoginScreen() {
       });
 
       setIsLoading(false);
-      setSuccessMessage(`Welcome to PayU, ${fullName.trim()}!`);
+      setSuccessMessage(`Welcome to GDPay, ${fullName.trim()}!`);
       setIsSuccess(true);
       setTimeout(() => {
         router.replace('/(tabs)');
@@ -295,15 +296,14 @@ export default function LoginScreen() {
         >
           {/* Brand Header */}
           <View style={styles.brandHeader}>
-            <LinearGradient
-              colors={['#8B5CF6', '#7C3AED', '#6D28D9']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.logoBadge}
-            >
-              <Sparkles size={24} color="#FFFFFF" />
-            </LinearGradient>
-            <Text style={styles.brandName}>PayU</Text>
+            <View style={styles.logoBadge}>
+              <Image
+                source={require('../../assets/images/icon.png')}
+                style={styles.logoBadgeImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.brandName}>GDPay</Text>
             <Text style={styles.brandSubtitle}>Fast • Secure • Daily Rewards</Text>
           </View>
 
@@ -833,17 +833,22 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   logoBadge: {
-    width: 58,
-    height: 58,
-    borderRadius: 20,
+    width: 62,
+    height: 62,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#7C3AED',
+    shadowColor: '#0247FE',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,
     elevation: 8,
     marginBottom: 10,
+  },
+  logoBadgeImage: {
+    width: 62,
+    height: 62,
+    borderRadius: 16,
   },
   brandName: {
     fontSize: 26,

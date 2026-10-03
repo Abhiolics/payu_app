@@ -551,7 +551,7 @@ export default function MyAssetScreen() {
             </View>
 
             <Text style={styles.accountDesc}>
-              Are you sure you want to log out of your PayU account? You will need to sign in again to access your assets.
+              Are you sure you want to log out of your GDPay account? You will need to sign in again to access your assets.
             </Text>
 
             <View style={styles.logoutBtnRow}>

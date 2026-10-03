@@ -50,7 +50,7 @@ export default function TeamsTabScreen() {
       .finally(() => setIsLoading(false));
   }, [user]);
 
-  const inviteLink = stats?.inviteLink || `https://payu.trade/invite?code=VIP2026`;
+  const inviteLink = stats?.inviteLink || `https://gdpay.trade/invite?code=VIP2026`;
 
   const handleShare = async () => {
     try {
@@ -63,8 +63,8 @@ export default function TeamsTabScreen() {
 
     try {
       await Share.share({
-        title: 'Join My Team on PayU',
-        message: `Join my team on PayU and start earning daily commissions! Invitation Link: ${inviteLink}`,
+        title: 'Join My Team on GDPay',
+        message: `Join my team on GDPay and start earning daily commissions! Invitation Link: ${inviteLink}`,
         url: inviteLink,
       });
     } catch (err) {

@@ -1,22 +1,20 @@
 {
   "expo": {
-    "name": "PremiumApp",
+    "name": "GDPay",
     "slug": "premium-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "premiumapp",
+    "scheme": "gdpay",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/icon.png"
     },
     "android": {
-      "package": "com.premiumapp.main",
+      "package": "com.gdpe.main",
       "adaptiveIcon": {
-        "backgroundColor": "#151515",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#0247FE",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -29,9 +27,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#0247FE",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 100
         }
       ],
       [
@@ -58,6 +56,7 @@
       "eas": {
         "projectId": "185bd56b-57b9-484a-832f-ad31a73524a4"
       }
-    }
+    },
+    "owner": "abhiolics"
   }
 }

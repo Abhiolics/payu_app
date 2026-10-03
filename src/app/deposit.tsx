@@ -183,7 +183,7 @@ export default function DepositScreen() {
 
   // Generate dynamic QR code URL based on current amount and UPI ID
   const dynamicQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=360x360&data=${encodeURIComponent(
-    `upi://pay?pa=${upiId}&pn=PayU&am=${amount || '1000'}&cu=INR`
+    `upi://pay?pa=${upiId}&pn=GDPay&am=${amount || '1000'}&cu=INR`
   )}`;
   const displayQrUrl = customQrImage || dynamicQrUrl;
 
@@ -194,7 +194,7 @@ export default function DepositScreen() {
         app,
         upiId,
         amount: amount || '1000',
-        name: 'PayU Deposit',
+        name: 'GDPay Deposit',
       });
     } finally {
       setTimeout(() => {
@@ -223,7 +223,7 @@ export default function DepositScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      quality: 0.8,
+      quality: 0.5,
     });
 
     if (!result.canceled && result.assets && result.assets[0]?.uri) {
@@ -243,7 +243,7 @@ export default function DepositScreen() {
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      quality: 0.8,
+      quality: 0.5,
     });
 
     if (!result.canceled && result.assets && result.assets[0]?.uri) {
@@ -1313,8 +1313,11 @@ const styles = StyleSheet.create({
   pgAppLogoWrapper: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    borderRadius: 12,
     overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
   },
   pgAppMeta: {
     marginLeft: 12,
