@@ -40,5 +40,11 @@ export const requestWithdrawal = async (
 
 export const getWithdrawals = async (): Promise<WithdrawalItem[]> => {
   const response = await apiClient.get<{ success: boolean; count: number; data: WithdrawalItem[] }>('/withdrawals');
-  return response.data.data || [];
+  if (Array.isArray(response.data?.data)) {
+    return response.data.data;
+  }
+  if (Array.isArray(response.data)) {
+    return response.data;
+  }
+  return [];
 };

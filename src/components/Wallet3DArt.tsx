@@ -12,10 +12,15 @@ import Svg, {
   Text as SvgText,
 } from 'react-native-svg';
 
-export default function Wallet3DArt() {
+interface Wallet3DArtProps {
+  width?: number;
+  height?: number;
+}
+
+export default function Wallet3DArt({ width = 145, height = 118 }: Wallet3DArtProps) {
   return (
-    <View style={styles.container}>
-      <Svg width="165" height="135" viewBox="0 0 165 135" fill="none">
+    <View style={[styles.container, { width, height }]}>
+      <Svg width={width} height={height} viewBox="0 0 165 135" fill="none">
         <Defs>
           {/* Wallet Body Gradient */}
           <LinearGradient id="walletGrad" x1="0" y1="0" x2="1" y2="1">
@@ -272,8 +277,6 @@ export default function Wallet3DArt() {
 
 const styles = StyleSheet.create({
   container: {
-    width: 165,
-    height: 135,
     justifyContent: 'center',
     alignItems: 'center',
   },

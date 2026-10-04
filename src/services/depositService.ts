@@ -101,5 +101,11 @@ export const submitDeposit = async (
 
 export const getDeposits = async (): Promise<DepositItem[]> => {
   const response = await apiClient.get<{ success: boolean; count: number; data: DepositItem[] }>('/deposits');
-  return response.data.data || [];
+  if (Array.isArray(response.data?.data)) {
+    return response.data.data;
+  }
+  if (Array.isArray(response.data)) {
+    return response.data;
+  }
+  return [];
 };

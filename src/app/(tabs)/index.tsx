@@ -10,13 +10,13 @@ import InviteBanner from '../../components/InviteBanner';
 import { useAuth } from '../../context/AuthContext';
 
 export default function HomeScreen() {
-  const { refreshUserData, refreshWallet } = useAuth();
+  const { refreshUserData, refreshWallet, refreshTotals } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await Promise.all([refreshUserData(), refreshWallet()]);
+      await Promise.all([refreshUserData(), refreshWallet(), refreshTotals()]);
     } catch {
       // Ignore
     } finally {

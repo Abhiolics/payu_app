@@ -3,9 +3,11 @@ import {
   UserProfile,
   WalletData,
   AppSettings,
+  WalletTotals,
   getStoredAuthToken,
   getMe,
   getWalletBalance,
+  getWalletTotals,
   getUnreadNotificationCount,
   getAppSettings,
   login,
@@ -19,6 +21,7 @@ interface AuthContextType {
   user: UserProfile | null;
   token: string | null;
   wallet: WalletData | null;
+  totals: WalletTotals;
   unreadCount: number;
   appSettings: AppSettings | null;
   isAuthenticated: boolean;
@@ -34,6 +37,7 @@ interface AuthContextType {
   logoutUser: () => Promise<void>;
   refreshUserData: () => Promise<void>;
   refreshWallet: () => Promise<void>;
+  refreshTotals: () => Promise<WalletTotals>;
   refreshUnreadCount: () => Promise<void>;
   updateUserProfile: (payload: { fullName?: string; phoneNumber?: string }) => Promise<UserProfile>;
   checkAppSettings: () => Promise<AppSettings | null>;
@@ -45,6 +49,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [wallet, setWallet] = useState<WalletData | null>(null);
+  const [totals, setTotals] = useState<WalletTotals>({
+    totalDeposit: 0,
+    totalWithdrawal: 0,
+    pendingDeposit: 0,
+    pendingWithdrawal: 0,
+  });
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -61,6 +71,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // Refresh totals (deposits & withdrawals)
+  const refreshTotals = useCallback(async (): Promise<WalletTotals> => {
+    try {
+      const data = await getWalletTotals();
+      setTotals(data);
+      return data;
+    } catch (error) {
+      console.warn('Failed to fetch wallet totals:', error);
+      return { totalDeposit: 0, totalWithdrawal: 0, pendingDeposit: 0, pendingWithdrawal: 0 };
+    }
+  }, []);
+
   // Refresh wallet balance
   const refreshWallet = useCallback(async () => {
     try {
@@ -69,8 +91,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       // Wallet may not be initialized or unauthenticated
       console.warn('Failed to fetch wallet:', error);
+    } finally {
+      await refreshTotals();
     }
-  }, []);
+  }, [refreshTotals]);
 
   // Refresh unread notifications count
   const refreshUnreadCount = useCallback(async () => {
@@ -93,12 +117,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           pendingBalance: profile.wallet.pendingBalance,
         });
       }
-      await refreshWallet();
-      await refreshUnreadCount();
+      await Promise.allSettled([refreshWallet(), refreshUnreadCount(), refreshTotals()]);
     } catch (error) {
       console.warn('Failed to fetch user profile:', error);
     }
-  }, [refreshWallet, refreshUnreadCount]);
+  }, [refreshWallet, refreshUnreadCount, refreshTotals]);
 
   // Initial load
   useEffect(() => {
@@ -117,8 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 pendingBalance: profile.wallet.pendingBalance,
               });
             }
-            await refreshWallet();
-            await refreshUnreadCount();
+            await Promise.allSettled([refreshWallet(), refreshUnreadCount(), refreshTotals()]);
           } catch (profileError) {
             console.warn('Stored token may be invalid, clearing:', profileError);
             await logout();
@@ -134,7 +156,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     initializeAuth();
-  }, [checkAppSettings, refreshWallet, refreshUnreadCount]);
+  }, [checkAppSettings, refreshWallet, refreshUnreadCount, refreshTotals]);
 
   const loginWithOtp = async (email: string, otp: string): Promise<{ isNewUser: boolean; user?: UserProfile }> => {
     const result = await verifyOtp(email, otp);
@@ -176,6 +198,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(null);
     setUser(null);
     setWallet(null);
+    setTotals({
+      totalDeposit: 0,
+      totalWithdrawal: 0,
+      pendingDeposit: 0,
+      pendingWithdrawal: 0,
+    });
     setUnreadCount(0);
   };
 
@@ -191,6 +219,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         token,
         wallet,
+        totals,
         unreadCount,
         appSettings,
         isAuthenticated: Boolean(token && user),
@@ -201,6 +230,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logoutUser,
         refreshUserData,
         refreshWallet,
+        refreshTotals,
         refreshUnreadCount,
         updateUserProfile,
         checkAppSettings,
