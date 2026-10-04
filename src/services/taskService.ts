@@ -1,5 +1,6 @@
-import apiClient, { API_URL, getStoredAuthToken } from './api';
+import apiClient from './api';
 import { Platform } from 'react-native';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 
 export interface TaskItem {
   _id: string;
@@ -37,21 +38,34 @@ export const submitTaskProof = async (
   taskId: string,
   imageUri: string
 ): Promise<{ success: boolean; message: string; data: TaskSubmissionItem }> => {
-  const token = await getStoredAuthToken();
   const formData = new FormData();
+  formData.append('taskId', taskId);
 
-  const rawFilename = imageUri.split('/').pop()?.split('?')[0] || `task_proof_${Date.now()}.jpg`;
-  const cleanExt = rawFilename.split('.').pop()?.toLowerCase() || 'jpg';
-  const ext = ['png', 'jpg', 'jpeg', 'webp'].includes(cleanExt) ? cleanExt : 'jpg';
-  const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-  const filename = rawFilename.includes('.') ? rawFilename : `${rawFilename}.${ext}`;
+  // 1. Compress and normalize the image to avoid 413 payload limits and memory issues
+  let finalUri = imageUri;
+  if (Platform.OS !== 'web' && !imageUri.startsWith('blob:') && !imageUri.startsWith('data:')) {
+    try {
+      const compressed = await manipulateAsync(
+        imageUri,
+        [{ resize: { width: 1280 } }],
+        { compress: 0.6, format: SaveFormat.JPEG }
+      );
+      finalUri = compressed.uri;
+    } catch (err) {
+      console.warn('Task proof compression skipped:', err);
+    }
+  }
 
-  if (Platform.OS === 'web' || imageUri.startsWith('blob:') || imageUri.startsWith('data:')) {
-    const res = await fetch(imageUri);
+  const rawFilename = finalUri.split('/').pop()?.split('?')[0] || `task_proof_${Date.now()}.jpg`;
+  const filename = rawFilename.includes('.') ? rawFilename : `${rawFilename}.jpg`;
+
+  // 2. Append proof file properly for Web vs Native
+  if (Platform.OS === 'web' || finalUri.startsWith('blob:') || finalUri.startsWith('data:')) {
+    const res = await fetch(finalUri);
     const blob = await res.blob();
     formData.append('proof', blob, filename);
   } else {
-    let cleanUri = imageUri;
+    let cleanUri = finalUri;
     if (Platform.OS === 'android' && !cleanUri.startsWith('file://') && !cleanUri.startsWith('content://')) {
       cleanUri = `file://${cleanUri}`;
     }
@@ -59,22 +73,33 @@ export const submitTaskProof = async (
     formData.append('proof', {
       uri: cleanUri,
       name: filename,
-      type: mimeType,
+      type: 'image/jpeg',
     } as any);
   }
 
-  const response = await fetch(`${API_URL}/tasks/${taskId}/submit`, {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: formData,
-  });
+  // 3. Use axios via apiClient: React Native's raw fetch() rejects { uri, name, type }
+  // objects with "Unsupported form data part" / "Unsupported FormDataPart implementation".
+  // apiClient uses XMLHttpRequest (RCTNetworking) which natively handles file refs.
+  const axiosResponse = await apiClient.post<{
+    success: boolean;
+    message: string;
+    data: TaskSubmissionItem;
+  }>(
+    `/tasks/${taskId}/submit`,
+    formData,
+    {
+      timeout: 45000,
+      headers: {
+        Accept: 'application/json',
+        // Do NOT set Content-Type manually — axios/RCTNetworking sets boundary automatically
+      },
+      transformRequest: [(data) => data],
+    }
+  );
 
-  const resJson = await response.json();
+  const resJson = axiosResponse.data;
 
-  if (!response.ok || resJson.success === false) {
+  if (!resJson.success) {
     throw new Error(resJson.message || 'Task submission failed');
   }
 
