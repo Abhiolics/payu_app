@@ -135,29 +135,33 @@ export default function PaymentHistoryScreen() {
       // Process Transactions
       if (txRes.status === 'fulfilled' && txRes.value?.data?.length > 0) {
         txRes.value.data.forEach((tx) => {
-          seenIds.add(tx._id);
-          const dt = formatDateTime(tx.createdAt);
-          const isCredit = tx.type === 'credit';
-          records.push({
-            id: tx._id,
-            orderCode: getOrderCode(tx),
-            amount: tx.amount,
-            status: normalizeStatus(tx.status),
-            category: tx.category || (isCredit ? 'Credit' : 'Debit'),
-            type: isCredit ? 'receive' : 'purchase',
-            time: dt.time,
-            date: dt.date,
-            referenceId: tx.referenceId,
-            description: tx.description,
-            rawDate: tx.createdAt,
-          });
+          if (!seenIds.has(tx._id)) {
+            seenIds.add(tx._id);
+            if (tx.referenceId) seenIds.add(tx.referenceId);
+            
+            const dt = formatDateTime(tx.createdAt);
+            const isCredit = tx.type === 'credit';
+            records.push({
+              id: tx._id,
+              orderCode: getOrderCode(tx),
+              amount: tx.amount,
+              status: normalizeStatus(tx.status),
+              category: tx.category || (isCredit ? 'Credit' : 'Debit'),
+              type: isCredit ? 'purchase' : 'receive',
+              time: dt.time,
+              date: dt.date,
+              referenceId: tx.referenceId,
+              description: tx.description,
+              rawDate: tx.createdAt,
+            });
+          }
         });
       }
 
-      // Process Deposits (into Receive)
+      // Process Deposits (into Purchase)
       if (depRes.status === 'fulfilled' && Array.isArray(depRes.value)) {
         depRes.value.forEach((dep) => {
-          if (!seenIds.has(dep._id)) {
+          if (!seenIds.has(dep._id) && (dep.transactionRef ? !seenIds.has(dep.transactionRef) : true)) {
             seenIds.add(dep._id);
             const dt = formatDateTime(dep.createdAt);
             records.push({
@@ -166,7 +170,7 @@ export default function PaymentHistoryScreen() {
               amount: dep.amount,
               status: normalizeStatus(dep.status),
               category: 'Deposit',
-              type: 'receive',
+              type: 'purchase',
               time: dt.time,
               date: dt.date,
               referenceId: dep.transactionRef,
@@ -177,7 +181,7 @@ export default function PaymentHistoryScreen() {
         });
       }
 
-      // Process Withdrawals (into Purchase)
+      // Process Withdrawals (into Receive)
       if (withRes.status === 'fulfilled' && Array.isArray(withRes.value)) {
         withRes.value.forEach((w) => {
           if (!seenIds.has(w._id)) {
@@ -189,7 +193,7 @@ export default function PaymentHistoryScreen() {
               amount: w.amount,
               status: normalizeStatus(w.status),
               category: 'Withdrawal',
-              type: 'purchase',
+              type: 'receive',
               time: dt.time,
               date: dt.date,
               description: w.adminRemark || 'Withdrawal Payout',

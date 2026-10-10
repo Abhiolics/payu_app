@@ -84,8 +84,14 @@ export default function DepositScreen() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Form State
+  const isValidObjectId = (id?: string | null): boolean => {
+    return Boolean(id && typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id.trim()));
+  };
+
   const [amount, setAmount] = useState(initialPlanAmount || '500');
-  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>(initialPlanId);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | undefined>(
+    isValidObjectId(initialPlanId) ? initialPlanId : undefined
+  );
   const [utr, setUtr] = useState('');
   const [screenshotUri, setScreenshotUri] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -144,7 +150,7 @@ export default function DepositScreen() {
         // If planAmount wasn't passed, check if plans exist and set default
         if (!initialPlanAmount && plansList && plansList.length > 0) {
           setAmount(String(plansList[0].amount));
-          setSelectedPlanId(plansList[0]._id);
+          setSelectedPlanId(isValidObjectId(plansList[0]._id) ? plansList[0]._id : undefined);
           setTempAmount(String(plansList[0].amount));
         }
       } catch (err) {
@@ -261,7 +267,7 @@ export default function DepositScreen() {
   };
 
   const handleSelectPlan = (plan: MembershipPlan) => {
-    setSelectedPlanId(plan._id);
+    setSelectedPlanId(isValidObjectId(plan._id) ? plan._id : undefined);
     setAmount(String(plan.amount));
     setTempAmount(String(plan.amount));
     setShowEditAmountModal(false);
@@ -288,7 +294,8 @@ export default function DepositScreen() {
     setSubmitError(null);
 
     try {
-      await submitDeposit(Number(amount), utr.trim(), screenshotUri, selectedPlanId);
+      const sanitizedPlanId = isValidObjectId(selectedPlanId) ? selectedPlanId : undefined;
+      await submitDeposit(Number(amount), utr.trim(), screenshotUri, sanitizedPlanId);
       setIsSubmitting(false);
       setShowSuccessModal(true);
       await refreshUserData();

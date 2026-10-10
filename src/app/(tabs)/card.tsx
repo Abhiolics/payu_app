@@ -237,12 +237,22 @@ export default function CardScreen() {
     setSelectedOffer(offer);
   };
 
+  const isValidObjectId = (id?: string | null): boolean => {
+    return Boolean(id && typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id.trim()));
+  };
+
   const handleProceedDeposit = (offer: CashbackOffer) => {
     setSelectedOffer(null);
+    const validPlanId = isValidObjectId(offer.planId)
+      ? offer.planId
+      : isValidObjectId(offer.id)
+      ? offer.id
+      : undefined;
+
     router.push({
       pathname: '/deposit',
       params: {
-        planId: offer.planId || offer.id,
+        ...(validPlanId ? { planId: validPlanId } : {}),
         planAmount: String(offer.amount),
       },
     });

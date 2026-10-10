@@ -5,9 +5,10 @@ export * from './depositService';
 export * from './giftCodeService';
 export * from './notificationService';
 export * from './planService';
+export * from './referralService';
 export * from './taskService';
 export * from './teamService';
 export * from './walletService';
 export * from './withdrawalService';
 export * from './upiApps';
-
+export * from './upiService';

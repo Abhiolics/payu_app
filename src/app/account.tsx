@@ -31,9 +31,17 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../context/AuthContext';
+import {
+  getMyUpis,
+  createUpiRecord,
+  updateUpiRecord,
+  deleteUpiRecord,
+  UpiRecord,
+} from '../services';
 
 export interface UpiAccount {
   id: string;
+  _id?: string;
   name: string;
   upiId: string;
   isDefault: boolean;
@@ -61,19 +69,98 @@ export default function AccountScreen() {
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Load saved accounts
+  // Load saved accounts & sync with backend
   useEffect(() => {
     loadAccounts();
   }, []);
 
   const loadAccounts = async () => {
     try {
+      // 1. Immediately read cached accounts for zero latency UI
+      let localAccounts: UpiAccount[] = [];
       const json = await AsyncStorage.getItem(STORAGE_KEY);
       if (json) {
         const parsed = JSON.parse(json);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          localAccounts = parsed;
           setAccounts(parsed);
         }
+      }
+
+      // 2. Fetch remote registered accounts from backend (GET /api/upi/my)
+      let backendUpis: UpiRecord[] = [];
+      try {
+        backendUpis = await getMyUpis();
+      } catch (apiErr) {
+        console.warn('Backend UPI fetch error (will use local fallback):', apiErr);
+      }
+
+      if (Array.isArray(backendUpis) && backendUpis.length > 0) {
+        const formatted: UpiAccount[] = backendUpis.map((b) => ({
+          id: b._id,
+          _id: b._id,
+          name: b.accountHolderName,
+          upiId: b.upiId,
+          isDefault: Boolean(b.isPrimary),
+          createdAt: b.createdAt || new Date().toISOString(),
+        }));
+
+        // Check if there were any local accounts not yet synced to backend
+        for (const local of localAccounts) {
+          const existsOnBackend = backendUpis.some(
+            (b) => b.upiId.toLowerCase().trim() === local.upiId.toLowerCase().trim()
+          );
+          if (!existsOnBackend) {
+            try {
+              const synced = await createUpiRecord({
+                upiId: local.upiId,
+                accountHolderName: local.name,
+                isPrimary: local.isDefault,
+              });
+              if (synced?._id) {
+                formatted.push({
+                  id: synced._id,
+                  _id: synced._id,
+                  name: synced.accountHolderName,
+                  upiId: synced.upiId,
+                  isDefault: Boolean(synced.isPrimary),
+                  createdAt: synced.createdAt || new Date().toISOString(),
+                });
+              }
+            } catch (syncErr) {
+              console.warn('Auto-sync local UPI to backend error:', syncErr);
+            }
+          }
+        }
+
+        setAccounts(formatted);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(formatted));
+      } else if (localAccounts.length > 0) {
+        // Backend returned empty but local has items: auto-sync local items to backend
+        const syncedList: UpiAccount[] = [];
+        for (let i = 0; i < localAccounts.length; i++) {
+          const item = localAccounts[i];
+          try {
+            const synced = await createUpiRecord({
+              upiId: item.upiId,
+              accountHolderName: item.name,
+              isPrimary: item.isDefault || i === 0,
+            });
+            syncedList.push({
+              id: synced?._id || item.id,
+              _id: synced?._id,
+              name: synced?.accountHolderName || item.name,
+              upiId: synced?.upiId || item.upiId,
+              isDefault: synced?.isPrimary ?? item.isDefault,
+              createdAt: synced?.createdAt || item.createdAt,
+            });
+          } catch (syncErr) {
+            console.warn('Failed to sync existing local UPI to backend:', syncErr);
+            syncedList.push(item);
+          }
+        }
+        setAccounts(syncedList);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(syncedList));
       }
     } catch (err) {
       console.warn('Failed to load accounts:', err);
@@ -104,7 +191,7 @@ export default function AccountScreen() {
     }
 
     // Check duplicate
-    if (accounts.some((a) => a.upiId.toLowerCase() === cleanUpi)) {
+    if (accounts.some((a) => a.upiId.toLowerCase().trim() === cleanUpi)) {
       setFormError('This UPI ID has already been added.');
       return;
     }
@@ -112,24 +199,42 @@ export default function AccountScreen() {
     setIsSaving(true);
     setFormError(null);
 
-    const newAccount: UpiAccount = {
-      id: Date.now().toString(),
-      name: cleanName,
-      upiId: cleanUpi,
-      isDefault: accounts.length === 0,
-      createdAt: new Date().toISOString(),
-    };
+    const isFirst = accounts.length === 0;
 
-    const updated = [newAccount, ...accounts];
     try {
+      // Send to backend API so it is saved to MongoDB and immediately visible in Admin Panel
+      const backendRecord = await createUpiRecord({
+        upiId: cleanUpi,
+        accountHolderName: cleanName,
+        isPrimary: isFirst,
+      });
+
+      const newAccount: UpiAccount = {
+        id: backendRecord?._id || Date.now().toString(),
+        _id: backendRecord?._id,
+        name: backendRecord?.accountHolderName || cleanName,
+        upiId: backendRecord?.upiId || cleanUpi,
+        isDefault: backendRecord?.isPrimary ?? isFirst,
+        createdAt: backendRecord?.createdAt || new Date().toISOString(),
+      };
+
+      const baseList = newAccount.isDefault
+        ? accounts.map((a) => ({ ...a, isDefault: false }))
+        : accounts;
+
+      const updated = [newAccount, ...baseList];
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       setAccounts(updated);
       setIsSaving(false);
       setShowAddModal(false);
-    } catch (err) {
-      console.warn('Failed to save account:', err);
+    } catch (err: any) {
+      console.error('Failed to register UPI on backend:', err);
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to save UPI account. Please verify details and try again.';
+      setFormError(errMsg);
       setIsSaving(false);
-      setFormError('Failed to save account. Please try again.');
     }
   };
 
@@ -143,10 +248,25 @@ export default function AccountScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: async () => {
+            const target = accounts.find((a) => a.id === id);
+            const backendId = target?._id || (target?.id && target.id.length === 24 ? target.id : null);
+
+            if (backendId) {
+              try {
+                await deleteUpiRecord(backendId);
+              } catch (err) {
+                console.warn('Failed to delete UPI on backend:', err);
+              }
+            }
+
             const filtered = accounts.filter((a) => a.id !== id);
             // If the deleted one was default, set the next one as default
             if (filtered.length > 0 && !filtered.some((a) => a.isDefault)) {
               filtered[0].isDefault = true;
+              const nextBackendId = filtered[0]._id || (filtered[0].id.length === 24 ? filtered[0].id : null);
+              if (nextBackendId) {
+                updateUpiRecord(nextBackendId, { isPrimary: true }).catch(() => {});
+              }
             }
             await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
             setAccounts(filtered);
@@ -157,6 +277,17 @@ export default function AccountScreen() {
   };
 
   const handleSetDefault = async (id: string) => {
+    const target = accounts.find((a) => a.id === id);
+    const backendId = target?._id || (target?.id && target.id.length === 24 ? target.id : null);
+
+    if (backendId) {
+      try {
+        await updateUpiRecord(backendId, { isPrimary: true });
+      } catch (err) {
+        console.warn('Failed to update primary UPI on backend:', err);
+      }
+    }
+
     const updated = accounts.map((a) => ({
       ...a,
       isDefault: a.id === id,
@@ -164,6 +295,7 @@ export default function AccountScreen() {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
     setAccounts(updated);
   };
+
 
   const handleCopyUpi = async (upi: string) => {
     try {

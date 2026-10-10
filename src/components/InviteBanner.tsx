@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Share } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { ArrowRight, Share2, Check } from 'lucide-react-native';
+import { Share2, Check, ArrowRight } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../context/AuthContext';
 import GiftBox3DArt from './GiftBox3DArt';
@@ -10,25 +10,24 @@ export default function InviteBanner() {
   const { user } = useAuth();
   const [copied, setCopied] = useState(false);
 
-  const inviteCode = user?._id ? user._id.slice(-6).toUpperCase() : 'VIP2026';
-  const inviteLink = `https://gdpay.trade/invite?code=${inviteCode}`;
+  const referralCode = user?.referralCode || (user?._id ? user._id.slice(-6).toUpperCase() : 'GDPE2026');
+  const referralLink = 'https://gdpe.info';
 
   const handleInvite = async () => {
     // 1. Copy link to clipboard
     try {
-      await Clipboard.setStringAsync(inviteLink);
+      await Clipboard.setStringAsync(referralLink);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
       // Ignore
     }
 
-    // 2. Open native share sheet with generated invite link
+    // 2. Open native share sheet with required format
     try {
       await Share.share({
-        title: 'Join My Team on GDPay',
-        message: `Join my team on GDPay and start earning daily commissions! Invitation Link: ${inviteLink}`,
-        url: inviteLink,
+        message: `Join GDPE App using my invite link: ${referralLink} or use Code: ${referralCode}`,
+        url: referralLink,
       });
     } catch (err) {
       console.warn('Share error:', err);
@@ -44,9 +43,9 @@ export default function InviteBanner() {
     >
       {/* Left Text & CTA */}
       <View style={styles.leftContent}>
-        <Text style={styles.title}>Invite Friends & Earn</Text>
+        <Text style={styles.title}>Refer & Earn Rewards</Text>
         <Text style={styles.subtitle}>
-          Grow your team and get exciting rewards!
+          Invite friends & earn level commissions on every deposit!
         </Text>
 
         <TouchableOpacity
@@ -63,7 +62,7 @@ export default function InviteBanner() {
             <>
               <Share2 size={13} color="#0F172A" strokeWidth={2.2} />
               <Text style={styles.inviteText}>Invite Now</Text>
-              <ArrowRight size={14} color="#0F172A" strokeWidth={2.5} />
+              <ArrowRight size={13} color="#0F172A" strokeWidth={2.5} />
             </>
           )}
         </TouchableOpacity>
@@ -82,7 +81,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     borderRadius: 20,
     paddingVertical: 18,
-    paddingLeft: 20,
+    paddingLeft: 18,
     paddingRight: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -97,22 +96,22 @@ const styles = StyleSheet.create({
   },
   leftContent: {
     flex: 1,
-    paddingRight: 8,
+    paddingRight: 6,
     zIndex: 2,
   },
   title: {
     color: '#0F172A',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     letterSpacing: -0.2,
   },
   subtitle: {
     color: '#475569',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '500',
     lineHeight: 16,
     marginTop: 4,
-    maxWidth: 190,
+    maxWidth: 200,
   },
   inviteButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -123,7 +122,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     alignSelf: 'flex-start',
-    marginTop: 14,
+    marginTop: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -136,8 +135,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   artWrapper: {
-    width: 120,
-    height: 100,
+    width: 110,
+    height: 95,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: -6,

@@ -18,8 +18,8 @@ export interface TeamStats {
 
 export const getTeamStats = async (user?: { _id?: string; id?: string } | null): Promise<TeamStats> => {
   const userId = user?._id || user?.id || 'MEMBER';
-  const inviteCode = userId.slice(-6).toUpperCase();
-  const inviteLink = `https://gdpay.trade/invite?code=${inviteCode}`;
+  const inviteCode = (user as any)?.referralCode || userId.slice(-6).toUpperCase();
+  const inviteLink = 'https://gdpe.info';
 
   try {
     // Attempt backend API if available

@@ -33,6 +33,7 @@ interface AuthContextType {
     phoneNumber: string;
     email: string;
     password: string;
+    referralCode?: string;
   }) => Promise<void>;
   logoutUser: () => Promise<void>;
   refreshUserData: () => Promise<void>;
@@ -185,6 +186,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     phoneNumber: string;
     email: string;
     password: string;
+    referralCode?: string;
   }) => {
     const result = await register(payload);
     if (result.token) {

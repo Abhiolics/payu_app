@@ -32,6 +32,7 @@ import {
   KeyRound,
   RotateCcw,
   X,
+  Gift,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../context/AuthContext';
@@ -54,6 +55,7 @@ export default function LoginScreen() {
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [password, setPassword] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   // Status & loaders
@@ -207,6 +209,11 @@ export default function LoginScreen() {
   const handleCompleteRegistration = async () => {
     setErrorMessage(null);
 
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setErrorMessage('Please enter a valid email address.');
+      return;
+    }
     if (!fullName.trim() || fullName.trim().length < 2) {
       setErrorMessage('Please enter your full legal name.');
       return;
@@ -229,6 +236,7 @@ export default function LoginScreen() {
         phoneNumber: phoneNumber.trim(),
         email: email.trim().toLowerCase(),
         password,
+        referralCode: referralCode.trim() || undefined,
       });
 
       setIsLoading(false);
@@ -445,14 +453,14 @@ export default function LoginScreen() {
                   </LinearGradient>
                 </TouchableOpacity>
 
-                {/* Optional: Sign in with Password toggle */}
+                {/* Replace Sign in with Password with Register Option */}
                 <TouchableOpacity
                   style={styles.secondaryToggle}
-                  onPress={() => animateToStep('password_login')}
+                  onPress={() => animateToStep('register')}
                   activeOpacity={0.7}
                 >
-                  <KeyRound size={15} color="#7C3AED" style={{ marginRight: 6 }} />
-                  <Text style={styles.secondaryToggleText}>Sign in with Password instead</Text>
+                  <User size={15} color="#7C3AED" style={{ marginRight: 6 }} />
+                  <Text style={styles.secondaryToggleText}>New user? Register Account</Text>
                 </TouchableOpacity>
               </View>
             ) : step === 'otp' ? (
@@ -586,21 +594,26 @@ export default function LoginScreen() {
                   No existing account found. Enter your details below to activate your account.
                 </Text>
 
-                {/* Email Banner with Change button */}
-                <View style={styles.verifiedEmailBox}>
-                  <Mail size={18} color="#7C3AED" />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.verifiedEmailLabel}>Account Email</Text>
-                    <Text style={styles.verifiedEmailVal}>{email}</Text>
+                {/* Field 0: Account Email */}
+                <View style={styles.fieldWrapper}>
+                  <Text style={styles.fieldLabel}>Account Email</Text>
+                  <View style={styles.inputContainer}>
+                    <View style={styles.inputIconBox}>
+                      <Mail size={18} color="#7C3AED" />
+                    </View>
+                    <TextInput
+                      style={styles.textInput}
+                      value={email}
+                      onChangeText={(val) => {
+                        setEmail(val);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
+                      placeholder="name@example.com"
+                      placeholderTextColor="#94A3B8"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
                   </View>
-                  <TouchableOpacity
-                    style={styles.changeEmailBtn}
-                    onPress={() => animateToStep('email')}
-                    activeOpacity={0.7}
-                  >
-                    <Edit3 size={13} color="#7C3AED" style={{ marginRight: 3 }} />
-                    <Text style={styles.changeEmailText}>Change</Text>
-                  </TouchableOpacity>
                 </View>
 
                 {/* Field 1: Full Name */}
@@ -673,6 +686,27 @@ export default function LoginScreen() {
                         <Eye size={18} color="#64748B" />
                       )}
                     </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* Field 4: Referral Code (Optional) */}
+                <View style={styles.fieldWrapper}>
+                  <Text style={styles.fieldLabel}>Referral Code (Optional)</Text>
+                  <View style={styles.inputContainer}>
+                    <View style={styles.inputIconBox}>
+                      <Gift size={18} color="#7C3AED" />
+                    </View>
+                    <TextInput
+                      style={styles.textInput}
+                      value={referralCode}
+                      onChangeText={(val) => {
+                        setReferralCode(val);
+                        if (errorMessage) setErrorMessage(null);
+                      }}
+                      placeholder="Enter invite code if any"
+                      placeholderTextColor="#94A3B8"
+                      autoCapitalize="characters"
+                    />
                   </View>
                 </View>
 

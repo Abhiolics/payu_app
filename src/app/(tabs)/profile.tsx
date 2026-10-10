@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  Share,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -31,6 +32,8 @@ import {
   ChevronRight,
   ShieldCheck,
   Award,
+  Users,
+  Share2,
 } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useAuth } from '../../context/AuthContext';
@@ -184,6 +187,13 @@ export default function MyAssetScreen() {
       sublabel: 'Linked bank & withdrawal details',
       icon: CreditCard,
       onPress: () => router.push('/account'),
+    },
+    {
+      id: 'referral',
+      label: 'Refer & Earn',
+      sublabel: 'Invite friends & view team stats',
+      icon: Users,
+      onPress: () => router.push('/teams'),
     },
     {
       id: 'gift',

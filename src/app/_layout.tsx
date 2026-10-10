@@ -18,6 +18,7 @@ export default function RootLayout() {
         <Stack.Screen name="withdraw" options={{ headerShown: false }} />
         <Stack.Screen name="confirm-payment" options={{ headerShown: false }} />
         <Stack.Screen name="teams" options={{ headerShown: false }} />
+        <Stack.Screen name="referral" options={{ headerShown: false }} />
         <Stack.Screen name="tasks" options={{ headerShown: false }} />
         <Stack.Screen name="service" options={{ headerShown: false }} />
         <Stack.Screen name="profile" options={{ headerShown: false }} />

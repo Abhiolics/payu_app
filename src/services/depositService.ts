@@ -27,8 +27,14 @@ export const submitDeposit = async (
   const formData = new FormData();
   formData.append('amount', String(amount));
   formData.append('transactionRef', transactionRef.trim());
-  if (planId) {
-    formData.append('planId', planId);
+  // Only attach planId if it is a valid 24-character hexadecimal MongoDB ObjectId
+  // This prevents BSONError / Cast to ObjectId failed errors with local IDs like "off-1"
+  const isValidObjectId = (id?: string | null): boolean => {
+    return Boolean(id && typeof id === 'string' && /^[0-9a-fA-F]{24}$/.test(id.trim()));
+  };
+
+  if (isValidObjectId(planId)) {
+    formData.append('planId', planId!.trim());
   }
 
   // Derive file extension and MIME type

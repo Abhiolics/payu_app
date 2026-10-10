@@ -27,15 +27,16 @@ import {
   RefreshCw,
   AlertCircle,
 } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../context/AuthContext';
-import { requestWithdrawal, getWithdrawals, WithdrawalItem } from '../services';
+import { requestWithdrawal, getWithdrawals, getMyUpis, WithdrawalItem } from '../services';
 
 export default function WithdrawScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const topPadding = Math.max(insets.top, Platform.OS === 'android' ? 36 : 20) + 10;
-  const { wallet, refreshUserData } = useAuth();
+  const { user, wallet, refreshUserData } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'withdraw' | 'history'>('withdraw');
 
@@ -56,6 +57,42 @@ export default function WithdrawScreen() {
 
   const availableBalance = wallet?.balance || 0;
 
+  // Prefill registered UPI and account holder name
+  useEffect(() => {
+    const prefillUpi = async () => {
+      try {
+        if (user?.fullName && !accountHolder) {
+          setAccountHolder(user.fullName);
+        }
+        const upis = await getMyUpis();
+        if (Array.isArray(upis) && upis.length > 0) {
+          const primary = upis.find((u) => u.isPrimary) || upis[0];
+          if (primary) {
+            if (!upiId) setUpiId(primary.upiId);
+            if (!accountHolder && primary.accountHolderName) {
+              setAccountHolder(primary.accountHolderName);
+            }
+          }
+        }
+      } catch {
+        try {
+          const json = await AsyncStorage.getItem('@user_upi_accounts');
+          if (json) {
+            const parsed = JSON.parse(json);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const primary = parsed.find((p: any) => p.isDefault) || parsed[0];
+              if (primary) {
+                if (!upiId) setUpiId(primary.upiId);
+                if (!accountHolder && primary.name) setAccountHolder(primary.name);
+              }
+            }
+          }
+        } catch {}
+      }
+    };
+    prefillUpi();
+  }, [user]);
+
   const loadHistory = async () => {
     try {
       setIsLoadingHistory(true);
@@ -73,6 +110,7 @@ export default function WithdrawScreen() {
       loadHistory();
     }
   }, [activeTab]);
+
 
   const handleSelectQuickAmount = (val: number) => {
     setAmount(String(val));

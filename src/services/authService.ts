@@ -7,6 +7,8 @@ export interface UserProfile {
   email: string;
   phoneNumber?: string;
   role: string;
+  referralCode?: string;
+  referralLink?: string;
   isBlocked?: boolean;
   isActive?: boolean;
   isEmailVerified?: boolean;
@@ -43,6 +45,7 @@ export const register = async (payload: {
   phoneNumber: string;
   email: string;
   password: string;
+  referralCode?: string;
 }): Promise<AuthResponse> => {
   const response = await apiClient.post<AuthResponse>('/auth/register', payload);
   if (response.data.token) {
